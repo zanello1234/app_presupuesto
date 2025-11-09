@@ -1,0 +1,2960 @@
+﻿<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Presupuesto Interactivo P&L / Cash Flow</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #f3f4f6;
+        }
+        /* Estilos para Celdas Editables */
+        .editable-cell {
+            background-color: #ffffff;
+            padding: 8px 10px;
+            border-radius: 4px;
+            border: 1px solid #d1d5db;
+            transition: all 0.2s ease;
+            min-width: 100px;
+            text-align: right;
+        }
+        .editable-cell:focus {
+            background-color: #fef9c3;
+            border-color: #f59e0b;
+            outline: 1px solid #f59e0b;
+            box-shadow: 0 0 0 2px rgba(245, 158, 11, 0.2);
+        }
+        /* Celdas calculadas (no editables) */
+        .calculated-cell {
+            background-color: #e5e7eb;
+            font-weight: 600;
+            padding: 8px 10px;
+            border-radius: 4px;
+            text-align: right;
+            min-width: 100px;
+        }
+        /* Rubros con detalle (clicables) */
+        .detail-row > td:not(:first-child) {
+            background-color: #dbeafe;
+            cursor: pointer;
+            transition: background-color 0.2s;
+        }
+        .detail-row > td:not(:first-child):hover {
+            background-color: #bfdbfe;
+        }
+        /* Fila de línea manual (nueva) */
+        .manual-line-row td:first-child {
+            padding-left: 2.5rem; /* Indentación */
+            font-size: 0.875rem;
+            color: #374151;
+        }
+        /* Fila de restante (nueva) */
+        .remaining-line-row td {
+            font-style: italic;
+            color: #4b5563;
+        }
+        .remaining-line-row td:first-child {
+            padding-left: 2.5rem; /* Indentación */
+        }
+        /* API Key Input */
+        .api-key-valid {
+            border-color: #10b981;
+            background-color: #f0fdf4;
+        }
+        .api-key-empty {
+            border-color: #f59e0b;
+        }
+        /* Spinner */
+        .spinner {
+            border: 3px solid #f3f3f3;
+            border-top: 3px solid #3498db;
+            border-radius: 50%;
+            width: 20px;
+            height: 20px;
+            animation: spin 1s linear infinite;
+            display: inline-block;
+        }
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+        /* Logo Preview */
+        .logo-preview {
+            max-width: 150px;
+            max-height: 80px;
+            object-fit: contain;
+            border: 2px solid #e5e7eb;
+            border-radius: 4px;
+            padding: 4px;
+        }
+        /* Logo en impresión */
+        @media print {
+            .print-header {
+                display: flex;
+                justify-content: space-between;
+                align-items: center;
+                margin-bottom: 20px;
+                padding-bottom: 10px;
+                border-bottom: 2px solid #000;
+            }
+            .print-logo {
+                max-width: 150px;
+                max-height: 80px;
+                object-fit: contain;
+            }
+        }
+        /* Header Fijo */
+        .header-row th {
+            position: sticky;
+            top: 0;
+            background-color: #1f2937;
+            color: white;
+            z-index: 10;
+        }
+
+        /* Tabs */
+        .tab-button.active {
+            border-b-4 border-blue-600 font-bold text-blue-800;
+        }
+        /* Estilos Cash Flow */
+        .cashflow-table .calculated-cell {
+            background-color: #eff6ff; /* Azul muy claro para CF */
+        }
+        .cashflow-table .is-cash-flow-total {
+            background-color: #bfdbfe; /* Azul medio para totales */
+            font-weight: 700;
+        }
+
+        /* Estilos de Impresión */
+        @media print {
+            body { padding: 0; margin: 0; }
+            /* Ocultar todo menos el panel activo (P&L o CF) */
+            body > .max-w-full > *:not(#projection-panel) { display: none; }
+            #projection-panel { padding: 0; margin: 0; box-shadow: none; border: none; }
+            /* Ocultar elementos interactivos */
+            #config-panel, #printButton, .ai-trigger-btn, #dashboard, .tab-button, #analyzeProjectionButton, #openScenarioModalButton, #exportExcelButton, #saveProjectButton, #loadProjectButton, #openBalanceImportButton {
+                display: none !important;
+            }
+            /* Asegurarse que la tabla ocupe el espacio */
+            #table-container { max-height: none !important; overflow: visible !important; width: 100% !important; }
+            table { width: 100% !important; border-collapse: collapse; font-size: 10px; }
+            .header-row th {
+                background-color: #eee !important; color: #000 !important; -webkit-print-color-adjust: exact; color-adjust: exact;
+            }
+            th, td { position: static !important; left: auto !important; padding: 4px 6px; }
+            tr { page-break-inside: avoid; }
+            td { background-color: #fff !important; }
+            .bg-gray-100, .bg-gray-100 td, .cashflow-table .calculated-cell, .cashflow-table .is-cash-flow-total {
+                -webkit-print-color-adjust: exact; color-adjust: exact;
+            }
+            #projection-panel > h2 { display: none; }
+        }
+    </style>
+</head>
+<body class="p-4 md:p-8">
+    <div class="max-w-full mx-auto bg-white shadow-xl rounded-lg overflow-hidden">
+        <h1 class="text-3xl font-bold text-gray-800 p-6 border-b border-gray-200">Presupuesto Interactivo</h1>
+
+        <!-- Pestañas (Tabs) -->
+        <div class="flex border-b border-gray-200">
+            <button id="tab-pnl" class="tab-button active px-6 py-3 text-lg text-gray-600 transition duration-150">Estado de Resultados (P&L)</button>
+            <button id="tab-cashflow" class="tab-button px-6 py-3 text-lg text-gray-600 transition duration-150">Cash Flow</button>
+        </div>
+        
+        <!-- Panel de Configuración -->
+        <div id="config-panel" class="p-6 bg-gray-50 border-b border-gray-200">
+            <h2 class="text-xl font-semibold mb-4 text-gray-700">Configuración Inicial</h2>
+            <div id="config-pnl" class="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-5 gap-6">
+                
+                <!-- Columna 1: Configuración General -->
+                <div class="space-y-4">
+                    <h3 class="font-semibold text-sm text-gray-600">General</h3>
+                    <div>
+                        <label for="initialSales" class="block text-sm font-medium text-gray-700">Ventas Mes 1 ($)</label>
+                        <input type="number" id="initialSales" value="1000000" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm sm:text-sm p-2">
+                    </div>
+                    <div>
+                        <label for="salesGrowth" class="block text-sm font-medium text-gray-700">Crecimiento Ventas Mensual (%)</label>
+                        <input type="number" id="salesGrowth" value="1" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm sm:text-sm p-2">
+                    </div>
+                    <div>
+                        <label for="months" class="block text-sm font-medium text-gray-700">Meses a Proyectar</label>
+                        <input type="number" id="months" value="6" min="1" max="60" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm sm:text-sm p-2">
+                    </div>
+                </div>
+
+                <!-- Columna 2: % Gastos 1 -->
+                <div class="space-y-4">
+                    <h3 class="font-semibold text-sm text-gray-600">P&L % (s/ Ventas)</h3>
+                    <div>
+                        <label for="percCOGS" class="block text-sm font-medium text-gray-700">% COGS</label>
+                        <input type="number" id="percCOGS" value="40" class="config-perc mt-1 block w-full rounded-md border-gray-300 shadow-sm sm:text-sm p-2">
+                    </div>
+                    <div>
+                        <label for="percAdmin" class="block text-sm font-medium text-gray-700">% G. Admin</label>
+                        <input type="number" id="percAdmin" value="15" class="config-perc mt-1 block w-full rounded-md border-gray-300 shadow-sm sm:text-sm p-2">
+                    </div>
+                    <div>
+                        <label for="percCommercial" class="block text-sm font-medium text-gray-700">% G. Comerciales</label>
+                        <input type="number" id="percCommercial" value="10" class="config-perc mt-1 block w-full rounded-md border-gray-300 shadow-sm sm:text-sm p-2">
+                    </div>
+                </div>
+
+                <!-- Columna 3: % Gastos 2 -->
+                <div class="space-y-4">
+                    <h3 class="font-semibold text-sm text-gray-600">P&L % (Otros)</h3>
+                    <div>
+                        <label for="percAmort" class="block text-sm font-medium text-gray-700">% Amortización (s/Ventas)</label>
+                        <input type="number" id="percAmort" value="5" class="config-perc mt-1 block w-full rounded-md border-gray-300 shadow-sm sm:text-sm p-2">
+                    </div>
+                    <div>
+                        <label for="percInterest" class="block text-sm font-medium text-gray-700">% Intereses (s/Ventas)</label>
+                        <input type="number" id="percInterest" value="2" class="config-perc mt-1 block w-full rounded-md border-gray-300 shadow-sm sm:text-sm p-2">
+                    </div>
+                    <div>
+                        <label for="percTax" class="block text-sm font-medium text-gray-700">% Impuestos (s/EBT)</label>
+                        <input type="number" id="percTax" value="35" class="config-perc mt-1 block w-full rounded-md border-gray-300 shadow-sm sm:text-sm p-2">
+                    </div>
+                </div>
+
+                <!-- Columna 4: Configuración Cash Flow (Inicialmente oculto) -->
+                <div id="config-cashflow" class="space-y-4" style="display: none;">
+                    <h3 class="font-semibold text-sm text-blue-600">Parámetros de Flujo de Caja</h3>
+                    <div>
+                        <label for="initialCash" class="block text-sm font-medium text-gray-700">Caja Inicial ($)</label>
+                        <input type="number" id="initialCash" value="50000" class="mt-1 block w-full rounded-md border-blue-300 shadow-sm sm:text-sm p-2">
+                    </div>
+                    <div>
+                        <label for="paymentTerms" class="block text-sm font-medium text-gray-700">Plazo de Pago (Días/Ej: 45, 30/60)</label>
+                        <input type="text" id="paymentTerms" value="30" class="mt-1 block w-full rounded-md border-blue-300 shadow-sm sm:text-sm p-2">
+                    </div>
+                    <div>
+                        <label for="collectionTerms" class="block text-sm font-medium text-gray-700">Plazo de Cobro (Días/Ej: 45, 30/60)</label>
+                        <input type="text" id="collectionTerms" value="30" class="mt-1 block w-full rounded-md border-blue-300 shadow-sm sm:text-sm p-2">
+                    </div>
+                </div>
+
+                <!-- Columna 5: API Key y Botones -->
+                <div class="flex flex-col items-end space-y-3 col-span-1">
+                    <div class="w-full">
+                        <label for="geminiApiKey" class="block text-sm font-medium text-gray-700 mb-1">🔑 API Key de Gemini</label>
+                        <input type="password" id="geminiApiKey" placeholder="Ingrese su API Key" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm sm:text-sm p-2">
+                        <p class="text-xs text-gray-500 mt-1">Necesaria para funciones de IA</p>
+                    </div>
+                    <div class="w-full">
+                        <label for="logoUpload" class="block text-sm font-medium text-gray-700 mb-1">📷 Logo (para PDF)</label>
+                        <input type="file" id="logoUpload" accept="image/*" class="mt-1 block w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-md file:border-0 file:text-sm file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100">
+                        <img id="logoPreview" class="logo-preview mt-2" style="display: none;">
+                    </div>
+                    <button id="generateButton" class="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded-md shadow-md transition duration-200">
+                        Generar / Reiniciar Proyección
+                    </button>
+                    <!-- (NUEVO) Botón de Importación de Balance -->
+                    <button id="openBalanceImportButton" class="w-full bg-purple-600 hover:bg-purple-700 text-white font-bold py-2 px-4 rounded-md shadow-md transition duration-200">
+                        📊 Importar Último Balance
+                    </button>
+                    <!-- (NUEVO) Botón de Análisis -->
+                    <button id="analyzeProjectionButton" class="w-full bg-teal-600 hover:bg-teal-700 text-white font-bold py-2 px-4 rounded-md shadow-md transition duration-200">
+                        ✨ Analizar Proyección (IA)
+                    </button>
+                    <!-- (NUEVO) Botón de Escenarios -->
+                    <button id="openScenarioModalButton" class="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-2 px-4 rounded-md shadow-md transition duration-200">
+                        ✨ Crear Escenario (IA)
+                    </button>
+                    <!-- Botones de Exportación y Gestión -->
+                    <div class="w-full flex space-x-2 mt-3">
+                        <button id="printButton" class="flex-1 bg-gray-600 hover:bg-gray-700 text-white font-bold py-2 px-4 rounded-md shadow-md transition duration-200">
+                            PDF
+                        </button>
+                        <button id="exportExcelButton" class="flex-1 bg-green-600 hover:bg-green-700 text-white font-bold py-2 px-4 rounded-md shadow-md transition duration-200">
+                            Excel
+                        </button>
+                    </div>
+                    <div class="w-full flex space-x-2">
+                        <button id="saveProjectButton" class="flex-1 bg-teal-600 hover:bg-teal-700 text-white font-bold py-2 px-4 rounded-md shadow-md transition duration-200">
+                            💾 Guardar
+                        </button>
+                        <button id="loadProjectButton" class="flex-1 bg-cyan-600 hover:bg-cyan-700 text-white font-bold py-2 px-4 rounded-md shadow-md transition duration-200">
+                            📂 Cargar
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Dashboard de KPIs -->
+        <div id="dashboard" class="p-6 bg-white border-b border-gray-200">
+            <h2 class="text-xl font-semibold mb-4 text-gray-700">Dashboard de KPIs</h2>
+            <div id="kpi-grid" class="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-4">
+                <!-- KPIs se insertarán aquí -->
+            </div>
+        </div>
+
+        <!-- Panel de Proyección -->
+        <div id="projection-panel" class="p-6 overflow-x-auto">
+            <h2 class="text-xl font-semibold mb-4 text-gray-700"><span id="active-tab-title">Estado de Resultados (P&L)</span></h2>
+            <div id="table-container" class="w-full overflow-x-auto" style="max-height: 60vh;">
+                <!-- La tabla se generará aquí -->
+                <p class="text-gray-500">Presiona "Generar Proyección" para empezar.</p>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal para Importación de Anexo -->
+    <div id="importModal" class="fixed inset-0 bg-gray-800 bg-opacity-75 flex items-center justify-center z-50 p-4" style="display: none; opacity: 0;">
+        <div class="bg-white rounded-lg shadow-xl w-full max-w-xl max-h-[80vh] flex flex-col">
+            <div class="flex justify-between items-center p-5 border-b sticky top-0 bg-white">
+                <h3 class="text-xl font-semibold">Importar Anexo de Gastos (IA)</h3>
+                <button id="closeImportModalButton" class="text-gray-500 hover:text-gray-800 text-2xl">&times;</button>
+            </div>
+            <div class="p-6 space-y-4 flex-grow overflow-y-auto">
+                <p class="text-sm text-gray-600">
+                    Pegá el texto de tu "Anexo II - Gastos" del balance. La IA lo analizará y te sugerirá las líneas de gastos a crear.
+                </p>
+                <textarea id="pastedAnexo" rows="10" class="w-full p-2 border border-gray-300 rounded-md" placeholder="Pegá aquí el texto de tu anexo..."></textarea>
+                <button id="analyzePastedTextButton" class="w-full bg-purple-600 hover:bg-purple-700 text-white font-bold py-2 px-4 rounded-md shadow-md transition duration-200 flex items-center justify-center">
+                    <span id="analyzeBtnText">Analizar con IA</span>
+                    <div id="importSpinner" class="spinner ml-2" style="display: none; border-top-color: white; border-color: white; border-top-color: #6d28d9;"></div>
+                </button>
+                <hr>
+                <div id="analysisResults" class="space-y-3">
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal para Importación de Balance Completo -->
+    <div id="balanceImportModal" class="fixed inset-0 bg-gray-800 bg-opacity-75 flex items-center justify-center z-50 p-4" style="display: none; opacity: 0;">
+        <div class="bg-white rounded-lg shadow-xl w-full max-w-2xl max-h-[80vh] flex flex-col">
+            <div class="flex justify-between items-center p-5 border-b sticky top-0 bg-white">
+                <h3 class="text-xl font-semibold">📊 Importar Balance Completo</h3>
+                <button id="closeBalanceImportButton" class="text-gray-500 hover:text-gray-800 text-2xl">&times;</button>
+            </div>
+            <div class="p-6 space-y-4 flex-grow overflow-y-auto">
+                <p class="text-sm text-gray-600">
+                    Subí tu balance en formato PDF. La IA extraerá automáticamente las ventas y todas las líneas de gastos del Estado de Resultados y Anexo de Gastos.
+                </p>
+                <div class="border-2 border-dashed border-gray-300 rounded-lg p-6 text-center">
+                    <input type="file" id="balancePdfUpload" accept=".pdf" class="hidden">
+                    <label for="balancePdfUpload" class="cursor-pointer">
+                        <div class="text-gray-500">
+                            <svg class="mx-auto h-12 w-12 text-gray-400" stroke="currentColor" fill="none" viewBox="0 0 48 48">
+                                <path d="M28 8H12a4 4 0 00-4 4v20m32-12v8m0 0v8a4 4 0 01-4 4H12a4 4 0 01-4-4v-4m32-4l-3.172-3.172a4 4 0 00-5.656 0L28 28M8 32l9.172-9.172a4 4 0 015.656 0L28 28m0 0l4 4m4-24h8m-4-4v8m-12 4h.02" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
+                            </svg>
+                            <p class="mt-2 text-sm font-medium text-gray-900">
+                                Click aquí para subir tu balance (PDF)
+                            </p>
+                            <p class="text-xs text-gray-500">PDF hasta 10MB</p>
+                        </div>
+                    </label>
+                </div>
+                <div id="pdfPreview" class="hidden bg-gray-50 border border-gray-200 rounded-lg p-4">
+                    <div class="flex items-center justify-between">
+                        <div class="flex items-center space-x-3">
+                            <svg class="h-8 w-8 text-red-500" fill="currentColor" viewBox="0 0 20 20">
+                                <path fill-rule="evenodd" d="M4 4a2 2 0 012-2h4.586A2 2 0 0112 2.586L15.414 6A2 2 0 0116 7.414V16a2 2 0 01-2 2H6a2 2 0 01-2-2V4z" clip-rule="evenodd" />
+                            </svg>
+                            <div>
+                                <p id="pdfFileName" class="text-sm font-medium text-gray-900"></p>
+                                <p id="pdfFileSize" class="text-xs text-gray-500"></p>
+                            </div>
+                        </div>
+                        <button id="removePdfButton" class="text-red-500 hover:text-red-700">
+                            <svg class="h-5 w-5" fill="currentColor" viewBox="0 0 20 20">
+                                <path fill-rule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clip-rule="evenodd" />
+                            </svg>
+                        </button>
+                    </div>
+                </div>
+                <button id="analyzeBalanceButton" class="w-full bg-purple-600 hover:bg-purple-700 text-white font-bold py-2 px-4 rounded-md shadow-md transition duration-200 flex items-center justify-center disabled:opacity-50 disabled:cursor-not-allowed" disabled>
+                    <span id="balanceAnalyzeBtnText">Analizar Balance con IA</span>
+                    <div id="balanceImportSpinner" class="spinner ml-2" style="display: none; border-top-color: white; border-color: white; border-top-color: #6d28d9;"></div>
+                </button>
+                <hr>
+                <div id="balanceAnalysisResults" class="space-y-3">
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal para Guardar Presupuesto -->
+    <div id="saveModal" class="fixed inset-0 bg-gray-800 bg-opacity-75 flex items-center justify-center z-50 p-4" style="display: none; opacity: 0;">
+        <div class="bg-white rounded-lg shadow-xl w-full max-w-md">
+            <div class="flex justify-between items-center p-5 border-b">
+                <h3 class="text-xl font-semibold">💾 Guardar Presupuesto</h3>
+                <button id="closeSaveModalButton" class="text-gray-500 hover:text-gray-800 text-2xl">&times;</button>
+            </div>
+            <div class="p-6 space-y-4">
+                <div>
+                    <label for="projectName" class="block text-sm font-medium text-gray-700">Nombre del Presupuesto</label>
+                    <input type="text" id="projectName" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm sm:text-sm p-2" placeholder="Ej: Presupuesto Q1 2025">
+                </div>
+                <div class="bg-blue-50 border border-blue-200 rounded-lg p-3">
+                    <p class="text-xs text-blue-700">
+                        📁 El archivo se guardará en la carpeta que selecciones en tu disco local (ej: Documentos/Presupuestos)
+                    </p>
+                </div>
+                <button id="confirmSaveButton" class="w-full bg-teal-600 hover:bg-teal-700 text-white font-bold py-2 px-4 rounded-md shadow-md transition duration-200">
+                    Guardar en Disco
+                </button>
+                <p id="saveSuccess" class="text-green-600 text-sm text-center" style="display: none;">¡Guardado exitosamente!</p>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal para Cargar Presupuesto -->
+    <div id="loadModal" class="fixed inset-0 bg-gray-800 bg-opacity-75 flex items-center justify-center z-50 p-4" style="display: none; opacity: 0;">
+        <div class="bg-white rounded-lg shadow-xl w-full max-w-2xl max-h-[80vh] flex flex-col">
+            <div class="flex justify-between items-center p-5 border-b sticky top-0 bg-white">
+                <h3 class="text-xl font-semibold">📂 Cargar Presupuesto</h3>
+                <button id="closeLoadModalButton" class="text-gray-500 hover:text-gray-800 text-2xl">&times;</button>
+            </div>
+            <div class="p-6 space-y-4 flex-grow overflow-y-auto">
+                <div id="savedProjectsList" class="space-y-2">
+                    <p class="text-gray-500 text-sm">No hay presupuestos guardados.</p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal para Importación de Anexo (MANTENER PARA COMPATIBILIDAD) -->
+    <div id="importModalOld" class="fixed inset-0 bg-gray-800 bg-opacity-75 flex items-center justify-center z-50 p-4" style="display: none; opacity: 0;">
+        <div class="bg-white rounded-lg shadow-xl w-full max-w-xl max-h-[80vh] flex flex-col">
+            <div class="flex justify-between items-center p-5 border-b sticky top-0 bg-white">
+                <h3 class="text-xl font-semibold">Importar Anexo de Gastos (IA)</h3>
+                <button id="closeImportModalButtonOld" class="text-gray-500 hover:text-gray-800 text-2xl">&times;</button>
+            </div>
+            <div class="p-6 space-y-4 flex-grow overflow-y-auto">
+                <p class="text-sm text-gray-600">
+                    Pegá el texto de tu "Anexo II - Gastos" del balance. La IA lo analizará y te sugerirá las líneas de gastos a crear.
+                </p>
+                <textarea id="pastedAnexoOld" rows="10" class="w-full p-2 border border-gray-300 rounded-md" placeholder="Pegá aquí el texto de tu anexo..."></textarea>
+                <button id="analyzePastedTextButtonOld" class="w-full bg-purple-600 hover:bg-purple-700 text-white font-bold py-2 px-4 rounded-md shadow-md transition duration-200 flex items-center justify-center">
+                    <span id="analyzeBtnTextOld">Analizar con IA</span>
+                    <div id="importSpinnerOld" class="spinner ml-2" style="display: none; border-top-color: white; border-color: white; border-top-color: #6d28d9;"></div>
+                </button>
+                <hr>
+                <div id="analysisResultsOld" class="space-y-3">
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal para Detalle de Líneas -->
+    <div id="detailModal" class="fixed inset-0 bg-gray-800 bg-opacity-75 flex items-center justify-center z-50 p-4" style="display: none; opacity: 0;">
+        <div class="bg-white rounded-lg shadow-xl w-full max-w-lg max-h-[80vh] flex flex-col">
+            <div class="flex justify-between items-center p-5 border-b">
+                <h3 id="modalTitle" class="text-xl font-semibold">Gestionar líneas de: G. Administración</h3>
+                <button id="closeModalButton" class="text-gray-500 hover:text-gray-800 text-2xl">&times;</button>
+            </div>
+            <div class="p-6 space-y-4 flex-grow overflow-y-auto">
+                <div class="grid grid-cols-3 gap-4 text-center">
+                    <div>
+                        <span class="text-sm text-gray-500 block">Total Proyectado</span>
+                        <span id="modalTotalProjected" class="text-lg font-bold">0</span>
+                    </div>
+                    <div>
+                        <span class="text-sm text-gray-500 block">Total Detalle Manual</span>
+                        <span id="modalTotalManual" class="text-lg font-bold text-blue-600">0</span>
+                    </div>
+                    <div>
+                        <span class="text-sm text-gray-500 block">Restante (por asignar)</span>
+                        <span id="modalTotalRemaining" class="text-lg font-bold text-green-600">0</span>
+                    </div>
+                </div>
+                <hr>
+                <div class="space-y-2">
+                    <h4 class="font-semibold text-gray-700">Líneas Manuales Creadas</h4>
+                    <div id="manualLinesList" class="space-y-2 max-h-40 overflow-y-auto pr-2">
+                        <p class="text-gray-500 text-sm">Aún no hay líneas de detalle.</p>
+                    </div>
+                </div>
+                <hr>
+                <form id="addManualLineForm" class="space-y-3">
+                    <h4 class="font-semibold text-gray-700">Agregar Nueva Línea</h4>
+                    <div>
+                        <label for="manualLineName" class="block text-sm font-medium text-gray-700">Nombre de la Línea (Ej. Sueldos, Alquileres)</label>
+                        <input type="text" id="manualLineName" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm sm:text-sm p-2" placeholder="Sueldos">
+                    </div>
+                    <button type="submit" class="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded-md shadow-md transition duration-200">
+                        Agregar Línea
+                    </button>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal para Asistente IA -->
+    <div id="aiChatModal" class="fixed inset-0 bg-gray-800 bg-opacity-75 flex items-center justify-center z-50 p-4" style="display: none; opacity: 0;">
+        <div class="bg-white rounded-lg shadow-xl w-full max-w-lg max-h-[80vh] flex flex-col">
+            <div class="flex justify-between items-center p-5 border-b sticky top-0 bg-white">
+                <h3 id="aiChatModalTitle" class="text-xl font-semibold">Asistente para: G. Administración</h3>
+                <button id="closeAiChatModalButton" class="text-gray-500 hover:text-gray-800 text-2xl">&times;</button>
+            </div>
+            <div class="p-6 space-y-4 flex-grow flex flex-col overflow-y-auto">
+                <div id="chatLog" class="flex-grow overflow-y-auto flex flex-col-reverse p-4 bg-gray-50 border border-gray-200 rounded-lg">
+                </div>
+                <div id="chatSpinner" class="text-center py-2" style="display: none;">
+                    <div class="spinner mx-auto"></div>
+                </div>
+                <form id="aiChatForm" class="flex items-center space-x-2 border-t pt-4">
+                    <input type="text" id="chatInput" class="flex-grow block w-full rounded-md border-gray-300 shadow-sm sm:text-sm p-2" placeholder="Escribe tu respuesta...">
+                    <button type="submit" class="bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded-md shadow-md transition duration-200">
+                        Enviar
+                    </button>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal para Importación de Anexo -->
+    <div id="importModal" class="fixed inset-0 bg-gray-800 bg-opacity-75 flex items-center justify-center z-50 p-4" style="display: none; opacity: 0;">
+        <div class="bg-white rounded-lg shadow-xl w-full max-w-xl max-h-[80vh] flex flex-col">
+            <div class="flex justify-between items-center p-5 border-b sticky top-0 bg-white">
+                <h3 class="text-xl font-semibold">Importar Anexo de Gastos (IA)</h3>
+                <button id="closeImportModalButton" class="text-gray-500 hover:text-gray-800 text-2xl">&times;</button>
+            </div>
+            <div class="p-6 space-y-4 flex-grow overflow-y-auto">
+                <p class="text-sm text-gray-600">
+                    Pegá el texto de tu "Anexo II - Gastos" del balance. La IA lo analizará y te sugerirá las líneas de gastos a crear.
+                </p>
+                <textarea id="pastedAnexo" rows="10" class="w-full p-2 border border-gray-300 rounded-md" placeholder="Pegá aquí el texto de tu anexo..."></textarea>
+                <button id="analyzePastedTextButton" class="w-full bg-purple-600 hover:bg-purple-700 text-white font-bold py-2 px-4 rounded-md shadow-md transition duration-200 flex items-center justify-center">
+                    <span id="analyzeBtnText">Analizar con IA</span>
+                    <div id="importSpinner" class="spinner ml-2" style="display: none; border-top-color: white; border-color: white; border-top-color: #6d28d9;"></div>
+                </button>
+                <hr>
+                <div id="analysisResults" class="space-y-3">
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal para Análisis de Proyección -->
+    <div id="summaryModal" class="fixed inset-0 bg-gray-800 bg-opacity-75 flex items-center justify-center z-50 p-4" style="display: none; opacity: 0;">
+        <div class="bg-white rounded-lg shadow-xl w-full max-w-xl max-h-[80vh] flex flex-col">
+            <div class="flex justify-between items-center p-5 border-b sticky top-0 bg-white">
+                <h3 class="text-xl font-semibold">✨ Análisis de la Proyección</h3>
+                <button id="closeSummaryModalButton" class="text-gray-500 hover:text-gray-800 text-2xl">&times;</button>
+            </div>
+            <div class="p-6 space-y-4 flex-grow overflow-y-auto">
+                <div id="summarySpinner" class="text-center py-10">
+                    <div class="spinner mx-auto"></div>
+                    <p class="text-gray-600 mt-2">Analizando sus números...</p>
+                </div>
+                <div id="summaryResults" class="space-y-3" style="display: none;">
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal para Análisis de Escenarios -->
+    <div id="scenarioModal" class="fixed inset-0 bg-gray-800 bg-opacity-75 flex items-center justify-center z-50 p-4" style="display: none; opacity: 0;">
+        <div class="bg-white rounded-lg shadow-xl w-full max-w-xl max-h-[80vh] flex flex-col">
+            <div class="flex justify-between items-center p-5 border-b sticky top-0 bg-white">
+                <h3 class="text-xl font-semibold">✨ Planificador de Escenarios (IA)</h3>
+                <button id="closeScenarioModalButton" class="text-gray-500 hover:text-gray-800 text-2xl">&times;</button>
+            </div>
+            <div class="p-6 space-y-4 flex-grow overflow-y-auto">
+                <p class="text-sm text-gray-600">
+                    Escribí una hipótesis en lenguaje natural para ver cómo impacta en tu resultado neto.
+                </p>
+                <textarea id="scenarioInput" rows="4" class="w-full p-2 border border-gray-300 rounded-md" placeholder="Ej: ¿Qué pasa si las ventas crecen un 5% más lento, pero los gastos de admin bajan un 3%?"></textarea>
+                <button id="analyzeScenarioButton" class="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-2 px-4 rounded-md shadow-md transition duration-200 flex items-center justify-center">
+                    <span id="scenarioBtnText">Analizar Escenario</span>
+                    <div id="scenarioSpinner" class="spinner ml-2" style="display: none; border-top-color: white; border-color: white; border-top-color: #4f46e5;"></div>
+                </button>
+                <hr>
+                <div id="scenarioResults" class="space-y-3" style="display: none;">
+                    <h4 class="font-semibold text-lg text-gray-800 mb-2">Comparación de Escenarios</h4>
+                    <div class="grid grid-cols-2 gap-4">
+                        <div class="bg-gray-100 p-4 rounded-lg text-center">
+                            <span class="text-sm text-gray-600 block">Resultado Neto (Base)</span>
+                            <span id="scenarioBaseResult" class="text-2xl font-bold text-gray-800">$0</span>
+                        </div>
+                        <div class="bg-blue-100 border border-blue-200 p-4 rounded-lg text-center">
+                            <span class="text-sm text-blue-700 block">Resultado Neto (Escenario)</span>
+                            <span id="scenarioNewResult" class="text-2xl font-bold text-blue-900">$0</span>
+                        </div>
+                    </div>
+                    <div class="mt-4 p-4 bg-gray-50 rounded-lg">
+                        <h5 class="font-semibold text-gray-700 mb-2">Variables Aplicadas</h5>
+                        <p id="scenarioChangesApplied" class="text-sm text-gray-600"></p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal para Generar Email -->
+    <div id="emailModal" class="fixed inset-0 bg-gray-800 bg-opacity-75 flex items-center justify-center z-50 p-4" style="display: none; opacity: 0;">
+        <div class="bg-white rounded-lg shadow-xl w-full max-w-2xl max-h-[80vh] flex flex-col">
+            <div class="flex justify-between items-center p-5 border-b sticky top-0 bg-white">
+                <h3 class="text-xl font-semibold">✨ Borrador de Email (Generado por IA)</h3>
+                <button id="closeEmailModalButton" class="text-gray-500 hover:text-gray-800 text-2xl">&times;</button>
+            </div>
+            <div class="p-6 space-y-4 flex-grow overflow-y-auto">
+                <div id="emailSpinner" class="text-center py-10">
+                    <div class="spinner mx-auto"></div>
+                    <p class="text-gray-600 mt-2">Redactando email...</p>
+                </div>
+                <div id="emailResults" class="space-y-4" style="display: none;">
+                    <div>
+                        <label for="emailSubject" class="block text-sm font-medium text-gray-700">Asunto:</label>
+                        <input type="text" id="emailSubject" readonly class="mt-1 block w-full rounded-md border-gray-300 bg-gray-100 shadow-sm sm:text-sm p-2">
+                    </div>
+                    <div>
+                        <label for="emailBody" class="block text-sm font-medium text-gray-700">Cuerpo:</label>
+                        <textarea id="emailBody" rows="12" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm sm:text-sm p-2"></textarea>
+                    </div>
+                    <button id="copyEmailButton" class="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded-md shadow-md transition duration-200">
+                        Copiar Cuerpo al Portapapeles
+                    </button>
+                    <p id="copyEmailSuccess" class="text-green-600 text-sm text-center" style="display: none;">¡Copiado!</p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal para Importación de Balance Completo -->
+    <div id="balanceImportModal" class="fixed inset-0 bg-gray-800 bg-opacity-75 flex items-center justify-center z-50 p-4" style="display: none; opacity: 0;">
+        <div class="bg-white rounded-lg shadow-xl w-full max-w-2xl max-h-[80vh] flex flex-col">
+            <div class="flex justify-between items-center p-5 border-b sticky top-0 bg-white">
+                <h3 class="text-xl font-semibold">📊 Importar Balance Completo</h3>
+                <button id="closeBalanceImportButton" class="text-gray-500 hover:text-gray-800 text-2xl">&times;</button>
+            </div>
+            <div class="p-6 space-y-4 flex-grow overflow-y-auto">
+                <p class="text-sm text-gray-600">
+                    Pegá el texto completo de tu balance (Estado de Resultados + Anexo de Gastos). La IA extraerá automáticamente las ventas y todas las líneas de gastos.
+                </p>
+                <textarea id="pastedBalance" rows="15" class="w-full p-2 border border-gray-300 rounded-md font-mono text-xs" placeholder="Pegá aquí el texto completo del balance..."></textarea>
+                <button id="analyzeBalanceButton" class="w-full bg-purple-600 hover:bg-purple-700 text-white font-bold py-2 px-4 rounded-md shadow-md transition duration-200 flex items-center justify-center">
+                    <span id="balanceAnalyzeBtnText">Analizar Balance con IA</span>
+                    <div id="balanceImportSpinner" class="spinner ml-2" style="display: none; border-top-color: white; border-color: white; border-top-color: #6d28d9;"></div>
+                </button>
+                <hr>
+                <div id="balanceAnalysisResults" class="space-y-3">
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal para Guardar Presupuesto -->
+    <div id="saveModal" class="fixed inset-0 bg-gray-800 bg-opacity-75 flex items-center justify-center z-50 p-4" style="display: none; opacity: 0;">
+        <div class="bg-white rounded-lg shadow-xl w-full max-w-md">
+            <div class="flex justify-between items-center p-5 border-b">
+                <h3 class="text-xl font-semibold">💾 Guardar Presupuesto</h3>
+                <button id="closeSaveModalButton" class="text-gray-500 hover:text-gray-800 text-2xl">&times;</button>
+            </div>
+            <div class="p-6 space-y-4">
+                <div>
+                    <label for="projectName" class="block text-sm font-medium text-gray-700">Nombre del Presupuesto</label>
+                    <input type="text" id="projectName" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm sm:text-sm p-2" placeholder="Ej: Presupuesto Q1 2025">
+                </div>
+                <button id="confirmSaveButton" class="w-full bg-teal-600 hover:bg-teal-700 text-white font-bold py-2 px-4 rounded-md shadow-md transition duration-200">
+                    Guardar
+                </button>
+                <p id="saveSuccess" class="text-green-600 text-sm text-center" style="display: none;">¡Guardado exitosamente!</p>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal para Cargar Presupuesto -->
+    <div id="loadModal" class="fixed inset-0 bg-gray-800 bg-opacity-75 flex items-center justify-center z-50 p-4" style="display: none; opacity: 0;">
+        <div class="bg-white rounded-lg shadow-xl w-full max-w-2xl max-h-[80vh] flex flex-col">
+            <div class="flex justify-between items-center p-5 border-b sticky top-0 bg-white">
+                <h3 class="text-xl font-semibold">📂 Cargar Presupuesto</h3>
+                <button id="closeLoadModalButton" class="text-gray-500 hover:text-gray-800 text-2xl">&times;</button>
+            </div>
+            <div class="p-6 space-y-4 flex-grow overflow-y-auto">
+                <div id="savedProjectsList" class="space-y-2">
+                    <p class="text-gray-500 text-sm">No hay presupuestos guardados.</p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+
+    <script>
+        document.addEventListener('DOMContentLoaded', () => {
+
+            // ------- ESTADO DE LA APLICACIÓN -------
+            let isCashFlowActive = false; // Estado para alternar P&L / Cash Flow
+
+            let state = {
+                config: {},
+                projection: [],
+                isEdited: [],
+                manualLines: {
+                    cogs: {}, admin: {}, commercial: {}
+                },
+                manualLineValues: {},
+                cashFlowDistribution: {
+                    collection: new Array(12).fill(0), // Distribución de cobro (Ej: [1, 0, 0, ...])
+                    payment: new Array(12).fill(0)    // Distribución de pago (Ej: [0.5, 0.5, 0, ...])
+                },
+                cashFlow: [], // Almacena los resultados del Cash Flow
+                currentModal: { rubroKey: null, mesIndex: null },
+                aiChatModal: { rubroKey: null, rubroLabel: null, history: [] },
+                logoDataUrl: null, // Almacena el logo en base64
+                currentProjectName: null // Nombre del proyecto actual
+            };
+
+            // ------- BASE DE DATOS LOCAL (Archivos JSON en Disco) -------
+            
+            // Directorio donde se guardarán los presupuestos
+            let presupuestosDir = null;
+            
+            const initDB = async () => {
+                // Ya no necesitamos IndexedDB, usamos el sistema de archivos
+                // Intentar recuperar el directorio guardado previamente
+                const savedDirHandle = localStorage.getItem('presupuestosDirHandle');
+                if (savedDirHandle) {
+                    try {
+                        // En futuras sesiones, podríamos recuperar el handle
+                        // Por ahora, el usuario deberá seleccionar cada vez
+                    } catch (e) {
+                        console.log('No se pudo recuperar el directorio anterior');
+                    }
+                }
+                return Promise.resolve();
+            };
+
+            const selectPresupuestosDirectory = async () => {
+                try {
+                    // Solicitar al usuario que seleccione una carpeta
+                    const dirHandle = await window.showDirectoryPicker({
+                        mode: 'readwrite',
+                        startIn: 'documents'
+                    });
+                    presupuestosDir = dirHandle;
+                    return dirHandle;
+                } catch (e) {
+                    if (e.name !== 'AbortError') {
+                        console.error('Error al seleccionar directorio:', e);
+                    }
+                    return null;
+                }
+            };
+
+            const saveProjectToDB = async (projectData) => {
+                if (!presupuestosDir) {
+                    presupuestosDir = await selectPresupuestosDirectory();
+                    if (!presupuestosDir) {
+                        throw new Error('No se seleccionó una carpeta para guardar');
+                    }
+                }
+
+                // Crear nombre de archivo seguro
+                const timestamp = Date.now();
+                const safeName = projectData.name.replace(/[^a-z0-9]/gi, '_').toLowerCase();
+                const fileName = `presupuesto_${safeName}_${timestamp}.json`;
+
+                try {
+                    // Crear el archivo
+                    const fileHandle = await presupuestosDir.getFileHandle(fileName, { create: true });
+                    const writable = await fileHandle.createWritable();
+                    
+                    // Escribir el contenido
+                    await writable.write(JSON.stringify(projectData, null, 2));
+                    await writable.close();
+                    
+                    return { success: true, fileName };
+                } catch (error) {
+                    console.error('Error al guardar archivo:', error);
+                    throw error;
+                }
+            };
+
+            const loadProjectsFromDB = async () => {
+                if (!presupuestosDir) {
+                    presupuestosDir = await selectPresupuestosDirectory();
+                    if (!presupuestosDir) {
+                        return [];
+                    }
+                }
+
+                const projects = [];
+                try {
+                    // Leer todos los archivos JSON del directorio
+                    for await (const entry of presupuestosDir.values()) {
+                        if (entry.kind === 'file' && entry.name.startsWith('presupuesto_') && entry.name.endsWith('.json')) {
+                            try {
+                                const file = await entry.getFile();
+                                const content = await file.text();
+                                const projectData = JSON.parse(content);
+                                projectData.fileName = entry.name;
+                                projectData.fileHandle = entry;
+                                projects.push(projectData);
+                            } catch (e) {
+                                console.error(`Error leyendo ${entry.name}:`, e);
+                            }
+                        }
+                    }
+                } catch (error) {
+                    console.error('Error al listar archivos:', error);
+                }
+                
+                return projects;
+            };
+
+            const deleteProjectFromDB = async (fileName) => {
+                if (!presupuestosDir) return;
+                
+                try {
+                    await presupuestosDir.removeEntry(fileName);
+                } catch (error) {
+                    console.error('Error al eliminar archivo:', error);
+                    throw error;
+                }
+            };
+
+            const changeSaveLocation = async () => {
+                const newDir = await selectPresupuestosDirectory();
+                if (newDir) {
+                    presupuestosDir = newDir;
+                    alert('✅ Nueva ubicación seleccionada. Los presupuestos se guardarán aquí.');
+                    await renderSavedProjects();
+                }
+            };
+
+
+            const configInputs = {
+                initialSales: document.getElementById('initialSales'),
+                salesGrowth: document.getElementById('salesGrowth'),
+                months: document.getElementById('months'),
+                percCOGS: document.getElementById('percCOGS'),
+                percAdmin: document.getElementById('percAdmin'),
+                percCommercial: document.getElementById('percCommercial'),
+                percAmort: document.getElementById('percAmort'),
+                percInterest: document.getElementById('percInterest'),
+                percTax: document.getElementById('percTax'),
+            };
+
+            const cashFlowInputs = {
+                initialCash: document.getElementById('initialCash'),
+                paymentTerms: document.getElementById('paymentTerms'),
+                collectionTerms: document.getElementById('collectionTerms')
+            };
+
+            const generateButton = document.getElementById('generateButton');
+            const tableContainer = document.getElementById('table-container');
+            const tabPnl = document.getElementById('tab-pnl');
+            const tabCashFlow = document.getElementById('tab-cashflow');
+            const activeTabTitle = document.getElementById('active-tab-title');
+            const configPnl = document.getElementById('config-pnl');
+            const configCashFlow = document.getElementById('config-cashflow');
+            const exportExcelButton = document.getElementById('exportExcelButton');
+
+
+            // --- Modal Elements --- (Todos definidos aquí para evitar errores 'null')
+            const detailModal = document.getElementById('detailModal');
+            const closeModalButton = document.getElementById('closeModalButton');
+            const modalTitle = document.getElementById('modalTitle');
+            const modalTotalProjected = document.getElementById('modalTotalProjected');
+            const modalTotalManual = document.getElementById('modalTotalManual');
+            const modalTotalRemaining = document.getElementById('modalTotalRemaining');
+            const manualLinesList = document.getElementById('manualLinesList');
+            const addManualLineForm = document.getElementById('addManualLineForm');
+            const aiChatModal = document.getElementById('aiChatModal');
+            const closeAiChatModalButton = document.getElementById('closeAiChatModalButton');
+            const aiChatModalTitle = document.getElementById('aiChatModalTitle');
+            const chatLog = document.getElementById('chatLog');
+            const aiChatForm = document.getElementById('aiChatForm');
+            const chatInput = document.getElementById('chatInput');
+            const chatSpinner = document.getElementById('chatSpinner');
+            const importModal = document.getElementById('importModal');
+            const closeImportModalButton = document.getElementById('closeImportModalButton');
+            const pastedAnexo = document.getElementById('pastedAnexo');
+            const analyzePastedTextButton = document.getElementById('analyzePastedTextButton');
+            const analysisResults = document.getElementById('analysisResults');
+            const importSpinner = document.getElementById('importSpinner');
+            const analyzeBtnText = document.getElementById('analyzeBtnText');
+            const balanceImportModal = document.getElementById('balanceImportModal');
+            const openBalanceImportButton = document.getElementById('openBalanceImportButton');
+            const closeBalanceImportButton = document.getElementById('closeBalanceImportButton');
+            const balancePdfUpload = document.getElementById('balancePdfUpload');
+            const pdfPreview = document.getElementById('pdfPreview');
+            const pdfFileName = document.getElementById('pdfFileName');
+            const pdfFileSize = document.getElementById('pdfFileSize');
+            const removePdfButton = document.getElementById('removePdfButton');
+            const analyzeBalanceButton = document.getElementById('analyzeBalanceButton');
+            const balanceAnalysisResults = document.getElementById('balanceAnalysisResults');
+            const balanceImportSpinner = document.getElementById('balanceImportSpinner');
+            const balanceAnalyzeBtnText = document.getElementById('balanceAnalyzeBtnText');
+            const saveModal = document.getElementById('saveModal');
+            const saveProjectButton = document.getElementById('saveProjectButton');
+            const closeSaveModalButton = document.getElementById('closeSaveModalButton');
+            const projectName = document.getElementById('projectName');
+            const confirmSaveButton = document.getElementById('confirmSaveButton');
+            const saveSuccess = document.getElementById('saveSuccess');
+            const loadModal = document.getElementById('loadModal');
+            const loadProjectButton = document.getElementById('loadProjectButton');
+            const closeLoadModalButton = document.getElementById('closeLoadModalButton');
+            const savedProjectsList = document.getElementById('savedProjectsList');
+            const logoUpload = document.getElementById('logoUpload');
+            const logoPreview = document.getElementById('logoPreview');
+            const analyzeProjectionButton = document.getElementById('analyzeProjectionButton');
+            const summaryModal = document.getElementById('summaryModal');
+            const closeSummaryModalButton = document.getElementById('closeSummaryModalButton');
+            const summarySpinner = document.getElementById('summarySpinner');
+            const summaryResults = document.getElementById('summaryResults');
+            const scenarioModal = document.getElementById('scenarioModal');
+            const openScenarioModalButton = document.getElementById('openScenarioModalButton');
+            const closeScenarioModalButton = document.getElementById('closeScenarioModalButton');
+            const scenarioInput = document.getElementById('scenarioInput');
+            const analyzeScenarioButton = document.getElementById('analyzeScenarioButton');
+            const scenarioBtnText = document.getElementById('scenarioBtnText');
+            const scenarioSpinner = document.getElementById('scenarioSpinner');
+            const scenarioResults = document.getElementById('scenarioResults');
+            const scenarioBaseResult = document.getElementById('scenarioBaseResult');
+            const scenarioNewResult = document.getElementById('scenarioNewResult');
+            const scenarioChangesApplied = document.getElementById('scenarioChangesApplied');
+            const printButton = document.getElementById('printButton');
+            const geminiApiKeyInput = document.getElementById('geminiApiKey');
+
+
+            // ------- FORMATEO Y UTILIDADES -------
+            const fNum = (num) => {
+                return new Intl.NumberFormat('es-AR', { 
+                    maximumFractionDigits: 0 
+                }).format(Math.round(num));
+            };
+
+            const pNum = (str) => {
+                return parseFloat(String(str).replace(/[$.]/g, '').replace(',', '.')) || 0;
+            };
+
+            const generateId = () => `line-${Math.random().toString(36).substr(2, 9)}`;
+
+            const createCell = (value, isEditable, rubroKey, mesIndex) => {
+                const cell = document.createElement('td');
+                cell.textContent = fNum(value);
+                cell.className = 'px-6 py-3 whitespace-nowrap text-sm text-gray-900';
+                
+                if (isEditable) {
+                    cell.contentEditable = true;
+                    cell.classList.add('editable-cell');
+                } else {
+                    cell.classList.add('calculated-cell');
+                }
+                
+                cell.dataset.rubro = rubroKey;
+                cell.dataset.mes = mesIndex;
+                return cell;
+            };
+
+            // --- LÓGICA DE MODALS (UI) ---
+
+            const openModal = (modalElement) => {
+                modalElement.style.display = 'flex';
+                setTimeout(() => modalElement.style.opacity = 1, 10);
+            };
+
+            const closeModal = (modalElement) => {
+                modalElement.style.opacity = 0;
+                setTimeout(() => modalElement.style.display = 'none', 300);
+            };
+
+            // --- LÓGICA DE CÁLCULO GENERAL ---
+
+            const updateConfig = () => {
+                state.config = {
+                    initialSales: pNum(configInputs.initialSales.value),
+                    salesGrowth: pNum(configInputs.salesGrowth.value) / 100,
+                    months: parseInt(configInputs.months.value),
+                    percCOGS: pNum(configInputs.percCOGS.value) / 100,
+                    percAdmin: pNum(configInputs.percAdmin.value) / 100,
+                    percCommercial: pNum(configInputs.percCommercial.value) / 100,
+                    percAmort: pNum(configInputs.percAmort.value) / 100,
+                    percInterest: pNum(configInputs.percInterest.value) / 100,
+                    percTax: pNum(configInputs.percTax.value) / 100,
+                    // Configuración de Cash Flow
+                    initialCash: pNum(cashFlowInputs.initialCash.value),
+                    paymentTerms: cashFlowInputs.paymentTerms.value.trim(),
+                    collectionTerms: cashFlowInputs.collectionTerms.value.trim(),
+                };
+            };
+
+            const calculateTotalManualForMonth = (rubroKey, mesIndex) => {
+                let totalManual = 0;
+                const lines = state.manualLines[rubroKey] || {};
+                Object.keys(lines).forEach(lineId => {
+                    totalManual += (state.manualLineValues[lineId] || [])[mesIndex] || 0;
+                });
+                return totalManual;
+            };
+
+            const calculateRemaining = (rubroKey, mesIndex, totalProjected = null) => {
+                // Si no se pasa el total proyectado (ej. al llamar desde el evento blur), se toma del estado
+                const baseTotal = totalProjected !== null ? totalProjected : state.projection[mesIndex][`${rubroKey}Base`];
+                
+                const totalManual = calculateTotalManualForMonth(rubroKey, mesIndex);
+                
+                return baseTotal - totalManual;
+            };
+
+            const calculateMonth = (mesIndex, previousMonth) => {
+                const cfg = state.config;
+                let monthData = state.projection[mesIndex] || {};
+                let monthEdited = state.isEdited[mesIndex] || {};
+
+                // 1. Calcular Ventas
+                if (!monthEdited.sales) {
+                    if (mesIndex === 0) {
+                        monthData.sales = cfg.initialSales;
+                    } else {
+                        monthData.sales = previousMonth.sales * (1 + cfg.salesGrowth);
+                    }
+                }
+                const sales = monthData.sales;
+
+                // 2. Calcular Rubros Base (solo si no fueron editados manualmente)
+                if (!monthEdited.cogs) monthData.cogs = sales * cfg.percCOGS;
+                if (!monthEdited.admin) monthData.admin = sales * cfg.percAdmin;
+                if (!monthEdited.commercial) monthData.commercial = sales * cfg.percCommercial;
+                if (!monthEdited.amort) monthData.amort = sales * cfg.percAmort;
+                if (!monthEdited.interest) monthData.interest = sales * cfg.percInterest;
+
+                // 3. Aplicar líneas manuales y calcular "Final" para COGS, Admin, Commercial
+                const rubrosConDetalle = ['cogs', 'admin', 'commercial'];
+                rubrosConDetalle.forEach(key => {
+                    monthData[`${key}Base`] = monthData[key]; // Guardar el valor proyectado (o editado)
+                    const totalManual = calculateTotalManualForMonth(key, mesIndex);
+                    
+                    // El valor final del rubro es el valor base proyectado. El restante es solo una visualización.
+                    // Si hay líneas manuales, la celda de restante se calcula: baseTotal - totalManual.
+                    // Si la celda base fue editada, el total ya fue fijado. Si no, usa el proyectado.
+                    monthData[key] = monthData[key]; // Se mantiene el valor del P&L
+                });
+                
+                // 4. Calcular Subtotales (Estos SIEMPRE se recalculan)
+                monthData.grossMargin = monthData.sales - monthData.cogs;
+                monthData.ebitda = monthData.grossMargin - monthData.admin - monthData.commercial;
+                monthData.ebit = monthData.ebitda - monthData.amort;
+                monthData.ebt = monthData.ebit - monthData.interest;
+                
+                // Impuestos se calcula s/ EBT (si EBT es positivo)
+                if (!monthEdited.tax) {
+                    monthData.tax = monthData.ebt > 0 ? monthData.ebt * cfg.percTax : 0;
+                }
+                
+                monthData.netIncome = monthData.ebt - monthData.tax;
+
+                return monthData;
+            };
+            
+            // --- LÓGICA DE RECALCULO ---
+
+            const regenerarProyeccionCompleta = async () => {
+                updateConfig();
+                
+                // 1. Recalcular P&L (siempre se recalcula para tener los datos base)
+                state.projection = [];
+                state.isEdited = [];
+                let previousMonth = null;
+                for (let i = 0; i < state.config.months; i++) {
+                    state.isEdited[i] = {
+                        sales: false, cogs: false, admin: false, commercial: false,
+                        amort: false, interest: false, tax: false
+                    };
+                    const newMonthData = calculateMonth(i, previousMonth);
+                    state.projection[i] = newMonthData;
+                    previousMonth = newMonthData;
+                }
+                
+                // 2. Recalcular Cash Flow (espera la distribución de IA)
+                await calculateCashFlow();
+                
+                // 3. Renderizar la vista activa
+                if (isCashFlowActive) {
+                    renderCashFlowTable();
+                } else {
+                    renderTable(); // P&L
+                }
+
+                // 4. Renderizar KPIs
+                renderKPIs();
+            };
+
+            const recalculateFrom = (startMesIndex) => {
+                let previousMonth = startMesIndex > 0 ? state.projection[startMesIndex - 1] : null;
+                
+                for (let i = startMesIndex; i < state.config.months; i++) {
+                    state.projection[i] = calculateMonth(i, previousMonth);
+                    updateTableCellsForMonth(i);
+                    previousMonth = state.projection[i];
+                }
+                updateAllRemainingRows();
+                
+                // Recalcular Cash Flow y KPIs después de P&L
+                calculateCashFlow().then(renderKPIs);
+            };
+
+            // --- LÓGICA DE MODALS DE DETALLE ---
+
+            const renderModalContent = () => {
+                const { rubroKey, mesIndex } = state.currentModal;
+                if (!rubroKey || mesIndex === null) return;
+                
+                const lines = state.manualLines[rubroKey] || {};
+                const totalProjected = state.projection[mesIndex][`${rubroKey}Base`] || 0;
+                const totalManual = calculateTotalManualForMonth(rubroKey, mesIndex);
+                const totalRemaining = totalProjected - totalManual;
+
+                modalTotalProjected.textContent = fNum(totalProjected);
+                modalTotalManual.textContent = fNum(totalManual);
+                modalTotalRemaining.textContent = fNum(totalRemaining);
+                
+                manualLinesList.innerHTML = '';
+
+                Object.keys(lines).forEach(lineId => {
+                    const lineDef = lines[lineId];
+                    const lineValue = (state.manualLineValues[lineId] || [])[mesIndex] || 0;
+                    
+                    const item = document.createElement('div');
+                    item.className = 'flex justify-between items-center p-2 border rounded-md bg-gray-50';
+                    item.innerHTML = `
+                        <span class="text-sm font-medium">${lineDef.name}</span>
+                        <div class="flex items-center space-x-2">
+                            <span class="text-sm font-semibold text-gray-700">$${fNum(lineValue)} (Mes ${mesIndex + 1})</span>
+                            <button data-line-id="${lineId}" class="delete-line-btn text-red-500 hover:text-red-700 font-bold text-lg leading-none p-1 rounded-full hover:bg-red-100" title="Eliminar línea">&times;</button>
+                        </div>
+                    `;
+                    manualLinesList.appendChild(item);
+                });
+
+                if (Object.keys(lines).length === 0) {
+                    manualLinesList.innerHTML = '<p class="text-gray-500 text-sm">Aún no hay líneas de detalle.</p>';
+                }
+
+                document.querySelectorAll('.delete-line-btn').forEach(btn => {
+                    btn.addEventListener('click', handleDeleteManualLine);
+                });
+            };
+
+            const openDetailModal = (rubroKey, mesIndex, rubroLabel) => {
+                state.currentModal = { rubroKey, mesIndex };
+                modalTitle.textContent = `Gestionar líneas de: ${rubroLabel} (Mes ${mesIndex + 1})`;
+                renderModalContent();
+                openModal(detailModal);
+            };
+            
+            const addManualLine = (rubroKey, name, monthlyAmount = 0) => {
+                const lineId = generateId();
+                if (!state.manualLines[rubroKey]) state.manualLines[rubroKey] = {};
+                state.manualLines[rubroKey][lineId] = { name };
+                
+                if (monthlyAmount !== 0) {
+                    state.manualLineValues[lineId] = new Array(state.config.months).fill(monthlyAmount);
+                } else {
+                    state.manualLineValues[lineId] = new Array(state.config.months).fill(0);
+                }
+
+                // Recalcular y renderizar
+                regenerarProyeccionCompleta();
+            };
+
+            const handleAddManualLine = (e) => {
+                e.preventDefault();
+                const input = document.getElementById('manualLineName');
+                const name = input.value.trim();
+                if (!name || !state.currentModal.rubroKey) return;
+                
+                addManualLine(state.currentModal.rubroKey, name);
+
+                input.value = '';
+                renderModalContent();
+            };
+
+            const handleDeleteManualLine = (e) => {
+                const lineId = e.currentTarget.dataset.lineId;
+                const { rubroKey } = state.currentModal;
+                if (!lineId || !rubroKey) return;
+
+                delete state.manualLines[rubroKey][lineId];
+                delete state.manualLineValues[lineId];
+
+                // Recalcular y renderizar
+                regenerarProyeccionCompleta();
+                renderModalContent(); // Actualizar el modal
+            };
+            
+            // --- LÓGICA ASISTENTE DE CHAT (IA) ---
+
+            const openAiChatModal = (rubroKey, rubroLabel) => {
+                state.aiChatModal.rubroKey = rubroKey;
+                state.aiChatModal.rubroLabel = rubroLabel;
+                state.aiChatModal.history = []; // Reiniciar historial
+                
+                aiChatModalTitle.textContent = `Asistente para: ${rubroLabel}`;
+                chatLog.innerHTML = '';
+                openModal(aiChatModal);
+                
+                // Iniciar conversación
+                addMessageToChatLog("¡Hola! Soy tu asistente de presupuesto. Dime, ¿qué líneas de gasto quieres detallar en este rubro?", 'ai');
+            };
+
+            const closeAiChatModal = () => closeModal(aiChatModal);
+            
+            const addMessageToChatLog = (text, sender) => {
+                const messageDiv = document.createElement('div');
+                const isAi = sender === 'ai';
+                
+                messageDiv.className = `max-w-xs md:max-w-md p-3 rounded-lg shadow-md mb-2 ${isAi ? 'self-start bg-gray-200' : 'self-end bg-blue-500 text-white'}`;
+                
+                // Expresión regular para buscar y formatear el comando
+                const commandMatch = text.match(/COMMAND: add_line_with_amount\('([^']+)',\s*([0-9.]+)\);/);
+                
+                if (commandMatch) {
+                    const lineName = commandMatch[1];
+                    const amount = pNum(commandMatch[2]);
+                    messageDiv.innerHTML = `
+                        <span class="font-bold text-green-700">✍️ Asistente Sugiere:</span>
+                        <p>Agregar línea "${lineName}" con importe mensual de **$${fNum(amount)}**.</p>
+                        <p class="text-xs mt-1">(La línea ha sido añadida a la tabla principal.)</p>
+                    `;
+                    messageDiv.classList.remove('bg-gray-200');
+                    messageDiv.classList.add('bg-green-100', 'text-gray-800');
+                    
+                    // Ejecutar el comando para añadir la línea
+                    addManualLine(state.aiChatModal.rubroKey, lineName, amount);
+
+                } else {
+                    messageDiv.textContent = text;
+                }
+                
+                chatLog.prepend(messageDiv);
+                
+                // Mantener el historial limpio (solo para la IA, el usuario lo escribe)
+                if (!isAi) {
+                    state.aiChatModal.history.push({ role: "user", parts: [{ text }] });
+                } else if (!commandMatch) {
+                    // Solo guardar mensajes de AI si no son comandos internos de interfaz
+                    state.aiChatModal.history.push({ role: "model", parts: [{ text }] });
+                }
+            };
+
+
+            const callGeminiAPI = async (chatHistory) => {
+                const apiKey = document.getElementById('geminiApiKey').value.trim();
+                if (!apiKey) {
+                    throw new Error('Por favor ingrese su API Key de Gemini en la configuración.');
+                }
+                
+                const apiUrlBase = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-pro:generateContent?key=${apiKey}`;
+
+                const systemPrompt = `Eres un experto contador y asistente de presupuesto en Argentina. Ayudas al usuario a desglosar un rubro (COGS, G. Admin o G. Comercial).
+                
+                Instrucciones:
+                1. Haz preguntas CORTAS y UNA POR VEZ (ej. ¿Cuántos empleados tienes? ¿Cuál es tu alquiler mensual?).
+                2. Si el usuario confirma un gasto (ej. "tengo sueldos" o "pago $10.000 de alquiler"), tu SIGUIENTE respuesta debe ser:
+                    a. Si te da el monto: Devolver el comando.
+                    b. Si no te da el monto: Pregúntale el monto mensual antes de dar el comando.
+                3. FORMATO DEL COMANDO (siempre en la respuesta de la IA, sin otros textos):
+                   \`COMMAND: add_line_with_amount('nombre de la línea', 12345.00);\`
+                4. El nombre de la línea debe ser corto (ej. 'Sueldos', 'Alquiler', 'Gastos Bancarios').
+                5. Siempre responde en español rioplatense (Argentina).`;
+
+                const payload = {
+                    contents: chatHistory,
+                    systemInstruction: { parts: [{ text: systemPrompt }] },
+                };
+
+                let response;
+                let delay = 1000;
+                for (let i = 0; i < 3; i++) {
+                    try {
+                        response = await fetch(apiUrlBase, {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify(payload)
+                        });
+                        if (response.ok) break;
+                        if (response.status === 401 || response.status === 429 || response.status >= 500) {
+                            if (response.status === 401) {
+                                console.error("Error 401: Fallo de Autenticación de Gemini. Asegúrese de que la clave se inyecte correctamente.");
+                            }
+                            await new Promise(res => setTimeout(res, delay));
+                            delay *= 2;
+                        } else {
+                            throw new Error(`Error HTTP: ${response.status}`);
+                        }
+                    } catch (error) {
+                        if (i === 2) throw error;
+                        await new Promise(res => setTimeout(res, delay));
+                        delay *= 2;
+                    }
+                }
+
+                if (!response.ok) {
+                    throw new Error(`Error final de API: ${response.status}`);
+                }
+
+                const result = await response.json();
+                return result.candidates?.[0]?.content?.parts?.[0]?.text || "Disculpa, no pude procesar tu solicitud. ¿Podrías reformularla?";
+            };
+
+            const handleChatSubmit = async (e) => {
+                e.preventDefault();
+                const userInput = chatInput.value.trim();
+                if (!userInput) return;
+
+                const apiKey = document.getElementById('geminiApiKey').value.trim();
+                if (!apiKey) {
+                    addMessageToChatLog("⚠️ Por favor, ingresa tu API Key de Gemini en la configuración para usar el asistente de IA.", 'ai');
+                    return;
+                }
+
+                addMessageToChatLog(userInput, 'user');
+                chatInput.value = '';
+                chatSpinner.style.display = 'block';
+                
+                try {
+                    const aiResponseText = await callGeminiAPI(state.aiChatModal.history);
+                    addMessageToChatLog(aiResponseText, 'ai');
+                } catch (error) {
+                    console.error("Error al llamar a la API de IA:", error);
+                    addMessageToChatLog("Disculpa, hubo un problema al comunicarme con el asistente. Intenta de nuevo.", 'ai');
+                } finally {
+                    chatSpinner.style.display = 'none';
+                    chatLog.scrollTop = chatLog.scrollHeight; // Scroll al final
+                }
+            };
+            
+            // --- LÓGICA DE IMPORTACIÓN DE ANEXO (IA) ---
+
+            const openImportModal = () => openModal(importModal);
+            const closeImportModal = () => closeModal(importModal);
+
+            const callGeminiForAnalysis = async (text) => {
+                const apiKey = document.getElementById('geminiApiKey').value.trim();
+                if (!apiKey) {
+                    throw new Error('Por favor ingrese su API Key de Gemini en la configuración.');
+                }
+                
+                const apiUrlBase = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-pro:generateContent?key=${apiKey}`;
+
+                const systemPrompt = `Eres un contador experto analizando balances. Tu tarea es extraer líneas de gastos de un texto de "Anexo de Gastos" de un Balance.
+                
+                Instrucciones:
+                1. Analiza el texto y clasifica las líneas de gasto en 'Gastos Administrativos', 'Gastos Comerciales' y 'COGS'.
+                2. Excluye totales, subtotales, o líneas que no sean gastos (ej. 'Resultados por tenencia', 'Intereses Fiscales', 'RECPAM').
+                3. Devuelve *únicamente* un objeto JSON válido con la siguiente estructura:
+                   {"admin": ["Luz", "Gastos Bancarios", ...], "commercial": ["Comisiones", "Publicidad", ...], "cogs": ["Sueldos y SAC operativos", "Cargas sociales", ...] }
+                4. No incluyas "json" ni ningún otro texto fuera del JSON.
+                5. Asegúrate de que los nombres de las líneas sean claros y estén limpios.
+                
+                TEXTO DEL ANEXO: "${text}"`;
+
+                const payload = {
+                    contents: [{ parts: [{ text: `Extrae las líneas de gastos y COGS del siguiente texto, clasifícalas en JSON.` }] }],
+                    systemInstruction: { parts: [{ text: systemPrompt }] },
+                    generationConfig: {
+                        responseMimeType: "application/json",
+                        responseSchema: {
+                            type: "OBJECT",
+                            properties: {
+                                "admin": { "type": "ARRAY", "items": { "type": "STRING" } },
+                                "commercial": { "type": "ARRAY", "items": { "type": "STRING" } },
+                                "cogs": { "type": "ARRAY", "items": { "type": "STRING" } }
+                            }
+                        }
+                    }
+                };
+                
+                let response;
+                let delay = 1000;
+                for (let i = 0; i < 3; i++) {
+                    try {
+                        response = await fetch(apiUrlBase, {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify(payload)
+                        });
+                        if (response.ok) break;
+                        if (response.status === 401 || response.status === 429 || response.status >= 500) {
+                            await new Promise(res => setTimeout(res, delay));
+                            delay *= 2;
+                        } else {
+                            throw new Error(`Error HTTP: ${response.status}`);
+                        }
+                    } catch (error) {
+                        if (i === 2) throw error;
+                        await new Promise(res => setTimeout(res, delay));
+                        delay *= 2;
+                    }
+                }
+
+                if (!response.ok) {
+                    throw new Error(`Error final de API: ${response.status}`);
+                }
+
+                const result = await response.json();
+                const textResult = result.candidates?.[0]?.content?.parts?.[0]?.text;
+                
+                if (!textResult) return { admin: [], commercial: [], cogs: [] };
+
+                try {
+                    return JSON.parse(textResult);
+                } catch (e) {
+                    console.error("Error al parsear JSON del anexo:", e);
+                    return { admin: [], commercial: [], cogs: [] };
+                }
+            };
+
+            const renderSuggestions = (lines, rubroKey, rubroLabel) => {
+                lines.forEach(lineName => {
+                    const item = document.createElement('div');
+                    item.className = 'flex justify-between items-center p-2 border rounded-md bg-white shadow-sm';
+                    item.innerHTML = `
+                        <span class="text-sm font-medium">${lineName} (${rubroLabel})</span>
+                        <button data-rubro="${rubroKey}" data-name="${lineName}" class="add-suggested-line-btn bg-green-500 hover:bg-green-600 text-white text-xs font-bold py-1 px-3 rounded-md">
+                            Agregar
+                        </button>
+                    `;
+                    analysisResults.appendChild(item);
+                });
+            };
+
+            const handleAnalyzeText = async () => {
+                const text = pastedAnexo.value.trim();
+                if (!text) return;
+
+                const apiKey = document.getElementById('geminiApiKey').value.trim();
+                if (!apiKey) {
+                    analysisResults.innerHTML = '<p class="text-center text-red-500 font-semibold">⚠️ Por favor, ingresa tu API Key de Gemini en la configuración.</p>';
+                    return;
+                }
+
+                analyzeBtnText.textContent = 'Analizando...';
+                importSpinner.style.display = 'inline-block';
+                analysisResults.innerHTML = '';
+
+                try {
+                    const suggestedLines = await callGeminiForAnalysis(text);
+                    
+                    const rubroMapping = {
+                        admin: { key: 'admin', label: 'G. Administración' },
+                        commercial: { key: 'commercial', label: 'G. Comerciales' },
+                        cogs: { key: 'cogs', label: 'COGS' },
+                    };
+                    
+                    let linesFound = false;
+
+                    Object.keys(rubroMapping).forEach(aiKey => {
+                        const lines = suggestedLines[aiKey] || [];
+                        if (lines.length > 0) {
+                            renderSuggestions(lines, rubroMapping[aiKey].key, rubroMapping[aiKey].label);
+                            linesFound = true;
+                        }
+                    });
+
+                    if (!linesFound) {
+                        analysisResults.innerHTML = '<p class="text-center text-red-500 font-semibold">No se encontraron líneas de gastos válidas en el texto.</p>';
+                    }
+                    
+                    document.querySelectorAll('.add-suggested-line-btn').forEach(btn => {
+                        btn.addEventListener('click', handleAddSuggestedLine);
+                    });
+
+
+                } catch (error) {
+                    console.error("Error en análisis de anexo:", error);
+                    analysisResults.innerHTML = `<p class="text-center text-red-500 font-semibold">Error al conectar con la IA: ${error.message}</p>`;
+                } finally {
+                    analyzeBtnText.textContent = 'Analizar con IA';
+                    importSpinner.style.display = 'none';
+                }
+            };
+            
+            const handleAddSuggestedLine = (e) => {
+                const rubroKey = e.currentTarget.dataset.rubro;
+                const lineName = e.currentTarget.dataset.name;
+                
+                // Agrega la línea a la tabla
+                addManualLine(rubroKey, lineName);
+                
+                // Opcional: Deshabilitar el botón para que no se agregue dos veces
+                e.currentTarget.disabled = true;
+                e.currentTarget.textContent = 'Añadido!';
+                e.currentTarget.classList.remove('bg-green-500', 'hover:bg-green-600');
+                e.currentTarget.classList.add('bg-gray-400');
+            };
+
+
+            // --- LÓGICA DE CÁLCULO CASH FLOW (IA) ---
+
+            // Función que llama a la IA para obtener la distribución de flujos
+            const callGeminiForCashFlowDistribution = async (term) => {
+                const apiKey = document.getElementById('geminiApiKey').value.trim();
+                if (!apiKey) {
+                    throw new Error('Por favor ingrese su API Key de Gemini en la configuración.');
+                }
+                
+                const apiUrlBase = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-pro:generateContent?key=${apiKey}`;
+
+                const systemPrompt = `Eres un experto financiero en Argentina. Tu tarea es convertir un plazo de cobro o pago (en días, o con splits como "30/60 días") en una distribución porcentual por mes.
+                
+                Instrucciones:
+                1.  El plazo siempre está basado en el mes en el que ocurre la VENTA o el GASTO (Mes 0).
+                2.  Devuelve *únicamente* un objeto JSON válido con las claves \`month0\`, \`month1\`, \`month2\`, etc., sumando el 100% (1.0).
+                3.  No uses más de 12 meses (month11).
+                4.  No incluyas "\`\`\`json" ni ningún otro texto fuera del JSON.
+
+                Ejemplo: "30 días" -> {"month1": 1.0} (Se cobra todo al mes siguiente)
+                Ejemplo: "45 días" -> {"month1": 0.5, "month2": 0.5} (50% al mes 1, 50% al mes 2)
+                Ejemplo: "30/60 días" -> {"month1": 0.5, "month2": 0.5} (Mitad al mes siguiente, mitad a los dos meses)
+                Ejemplo: "Contado" -> {"month0": 1.0} (Se cobra en el mismo mes)
+                
+                PLAZO A ANALIZAR: "${term}"`;
+
+                const payload = {
+                    contents: [{ parts: [{ text: `Analiza el plazo de ${term}` }] }],
+                    systemInstruction: { parts: [{ text: systemPrompt }] },
+                    generationConfig: {
+                        responseMimeType: "application/json",
+                        responseSchema: {
+                            type: "OBJECT",
+                            // Propiedades definidas dinámicamente: month0, month1, ...
+                        }
+                    }
+                };
+
+                let response;
+                let delay = 1000;
+                for (let i = 0; i < 3; i++) {
+                    try {
+                        // Usamos la URL base sin parámetros, confiando en el entorno para la inyección de la clave
+                        response = await fetch(apiUrlBase, {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify(payload)
+                        });
+                        if (response.ok) break;
+                        if (response.status === 401 || response.status === 429 || response.status >= 500) {
+                            if (response.status === 401) {
+                                console.error("Error 401: Fallo de Autenticación de Gemini. Asegúrese de que la clave se inyecte correctamente.");
+                            }
+                            await new Promise(res => setTimeout(res, delay));
+                            delay *= 2;
+                        } else {
+                            throw new Error(`Error HTTP: ${response.status}`);
+                        }
+                    } catch (error) {
+                        if (i === 2) throw error;
+                        await new Promise(res => setTimeout(res, delay));
+                        delay *= 2;
+                    }
+                }
+
+                if (!response.ok) {
+                    throw new Error(`Error final de API: ${response.status}`);
+                }
+
+                const result = await response.json();
+                const text = result.candidates?.[0]?.content?.parts?.[0]?.text;
+
+                if (!text) {
+                    throw new Error("No se recibió texto en la respuesta de la API.");
+                }
+
+                try {
+                    const distribution = JSON.parse(text);
+                    const validDistribution = {};
+                    let sum = 0;
+                    
+                    // Normalizar y validar la distribución
+                    for (const key in distribution) {
+                        if (key.startsWith('month') && !isNaN(distribution[key])) {
+                            const monthIndex = parseInt(key.substring(5));
+                            if (monthIndex >= 0 && monthIndex < state.config.months) {
+                                validDistribution[monthIndex] = Math.max(0, parseFloat(distribution[key]));
+                                sum += validDistribution[monthIndex];
+                            }
+                        }
+                    }
+
+                    // Asegurar que sume 1.0 (o cerca de 1.0)
+                    if (sum > 0.99 && sum < 1.01) {
+                         // Convertir a array indexado [0] = month0, [1] = month1, etc.
+                        const finalArray = new Array(state.config.months).fill(0);
+                        for (const monthIndex in validDistribution) {
+                            finalArray[monthIndex] = validDistribution[monthIndex];
+                        }
+                        return finalArray;
+                    } else {
+                         throw new Error(`Distribución inválida, suma ${sum.toFixed(2)}.`);
+                    }
+
+                } catch (e) {
+                    console.error("Error procesando distribución de IA. Usando default (Contado).", e);
+                    // Fallback seguro: 100% en el mismo mes
+                    const defaultArray = new Array(state.config.months).fill(0);
+                    defaultArray[0] = 1.0; 
+                    return defaultArray;
+                }
+            };
+            
+            // Distribuye un monto base a lo largo de los meses según la distribución
+            const distributeFlow = (baseAmount, baseIndex, distributionArray, months) => {
+                const flows = new Array(months).fill(0);
+                distributionArray.forEach((perc, flowDelay) => {
+                    const targetMonth = baseIndex + flowDelay;
+                    if (targetMonth < months) {
+                        flows[targetMonth] += baseAmount * perc;
+                    }
+                });
+                return flows;
+            };
+
+            const calculateCashFlow = async () => {
+                const cfg = state.config;
+                const months = cfg.months;
+                
+                // 1. Obtener la distribución de IA (Cobro y Pago)
+                let collectionDistribution;
+                try {
+                    collectionDistribution = await callGeminiForCashFlowDistribution(cfg.collectionTerms);
+                } catch (e) {
+                    console.error("Error al obtener distribución de COBRO de IA. Usando default.", e);
+                    collectionDistribution = new Array(months).fill(0);
+                    collectionDistribution[0] = 1.0;
+                }
+
+                let paymentDistribution;
+                try {
+                    paymentDistribution = await callGeminiForCashFlowDistribution(cfg.paymentTerms);
+                } catch (e) {
+                    console.error("Error al obtener distribución de PAGO de IA. Usando default.", e);
+                    paymentDistribution = new Array(months).fill(0);
+                    paymentDistribution[0] = 1.0;
+                }
+
+                state.cashFlowDistribution.collection = collectionDistribution;
+                state.cashFlowDistribution.payment = paymentDistribution;
+
+                // 2. Inicializar los arrays de flujo (Recaudaciones, Pagos, etc.)
+                const totalFlows = {
+                    salesCollection: new Array(months).fill(0),
+                    cogsPayment: new Array(months).fill(0),
+                    opexPayment: new Array(months).fill(0), // G. Admin + G. Comerciales
+                    taxPayment: new Array(months).fill(0),
+                    interestPayment: new Array(months).fill(0),
+                };
+
+                // 3. Procesar mes a mes el P&L para generar los flujos
+                for (let i = 0; i < months; i++) {
+                    const pnl = state.projection[i];
+                    
+                    // A. Flujo de Cobranzas (basado en Ventas P&L)
+                    const collectionFlow = distributeFlow(pnl.sales, i, collectionDistribution, months);
+                    collectionFlow.forEach((flow, index) => {
+                        totalFlows.salesCollection[index] += flow;
+                    });
+                    
+                    // B. Flujo de Pagos (basado en Gastos P&L - COGS, Admin, Commercial)
+                    const opexAmount = pnl.admin + pnl.commercial;
+                    
+                    // COGS (A Proveedores)
+                    const cogsFlow = distributeFlow(pnl.cogs, i, paymentDistribution, months);
+                    cogsFlow.forEach((flow, index) => {
+                        totalFlows.cogsPayment[index] += flow;
+                    });
+
+                    // OPEX (A Gastos Operativos)
+                    const opexFlow = distributeFlow(opexAmount, i, paymentDistribution, months);
+                    opexFlow.forEach((flow, index) => {
+                        totalFlows.opexPayment[index] += flow;
+                    });
+                    
+                    // Pagos SIN distribución (asumimos pago en el mismo mes)
+                    totalFlows.taxPayment[i] += pnl.tax;
+                    totalFlows.interestPayment[i] += pnl.interest;
+                }
+                
+                // 4. Calcular el Cash Flow mes a mes
+                state.cashFlow = [];
+                let previousCash = cfg.initialCash;
+
+                for (let i = 0; i < months; i++) {
+                    const cfMonth = {};
+                    cfMonth.cashInitial = previousCash;
+                    
+                    // Entradas
+                    cfMonth.salesCollection = totalFlows.salesCollection[i];
+                    cfMonth.totalInflow = cfMonth.salesCollection;
+
+                    // Salidas
+                    cfMonth.cogsPayment = totalFlows.cogsPayment[i];
+                    cfMonth.opexPayment = totalFlows.opexPayment[i];
+                    cfMonth.taxPayment = totalFlows.taxPayment[i];
+                    cfMonth.interestPayment = totalFlows.interestPayment[i];
+                    cfMonth.totalOutflow = cfMonth.cogsPayment + cfMonth.opexPayment + cfMonth.taxPayment + cfMonth.interestPayment;
+                    
+                    // Netos y Final
+                    cfMonth.netOperatingFlow = cfMonth.totalInflow - cfMonth.totalOutflow;
+                    cfMonth.cashFinal = cfMonth.cashInitial + cfMonth.netOperatingFlow;
+
+                    state.cashFlow[i] = cfMonth;
+                    previousCash = cfMonth.cashFinal;
+                }
+            };
+            
+            // --- RENDERIZADO P&L ---
+            
+            const renderTable = () => {
+                tableContainer.innerHTML = ''; // Limpiar tabla anterior
+                const table = document.createElement('table');
+                table.className = 'min-w-full divide-y divide-gray-200 border border-gray-300';
+                
+                const thead = document.createElement('thead');
+                const headerRow = document.createElement('tr');
+                headerRow.className = 'header-row';
+                
+                const thRubro = document.createElement('th');
+                thRubro.textContent = 'Rubro';
+                thRubro.className = 'px-6 py-3 text-left text-xs font-medium uppercase tracking-wider w-48 sticky left-0 z-10';
+                headerRow.appendChild(thRubro);
+
+                for (let i = 0; i < state.config.months; i++) {
+                    const thMes = document.createElement('th');
+                    thMes.textContent = `Mes ${i + 1}`;
+                    thMes.className = 'px-6 py-3 text-right text-xs font-medium uppercase tracking-wider';
+                    headerRow.appendChild(thMes);
+                }
+                thead.appendChild(headerRow);
+                table.appendChild(thead);
+
+                const tbody = document.createElement('tbody');
+                tbody.className = 'bg-white divide-y divide-gray-200';
+
+                // Definición de las filas
+                const rowsDefinition = [
+                    { key: 'sales', label: 'Ventas', editable: true, isNegative: false, hasDetail: false },
+                    { key: 'cogs', label: '(-) COGS', editable: true, isNegative: true, hasDetail: true },
+                    { key: 'grossMargin', label: 'Margen Bruto', editable: false, isNegative: false, isSubtotal: true, hasDetail: false },
+                    { key: 'admin', label: '(-) G. Administración', editable: true, isNegative: true, hasDetail: true },
+                    { key: 'commercial', label: '(-) G. Comerciales', editable: true, isNegative: true, hasDetail: true },
+                    { key: 'ebitda', label: 'EBITDA', editable: false, isNegative: false, isSubtotal: true, hasDetail: false },
+                    { key: 'amort', label: '(-) Amortizaciones', editable: true, isNegative: true, hasDetail: false },
+                    { key: 'ebit', label: 'EBIT', editable: false, isNegative: false, isSubtotal: true, hasDetail: false },
+                    { key: 'interest', label: '(-) Intereses', editable: true, isNegative: true, hasDetail: false },
+                    { key: 'ebt', label: 'Resultado (EBT)', editable: false, isNegative: false, isSubtotal: true, hasDetail: false },
+                    { key: 'tax', label: '(-) Impuestos', editable: true, isNegative: true, hasDetail: false },
+                    { key: 'netIncome', label: 'Resultado Neto', editable: false, isNegative: false, isSubtotal: true, isFinal: true, hasDetail: false },
+                ];
+
+                rowsDefinition.forEach(rowDef => {
+                    const tr = document.createElement('tr');
+                    tr.id = `row-${rowDef.key}`;
+                    if (rowDef.isSubtotal) tr.classList.add('bg-gray-100');
+                    if (rowDef.isFinal) tr.classList.add('font-bold', 'border-t-2', 'border-gray-400');
+                    
+                    if (rowDef.hasDetail) {
+                        rowDef.editable = false; 
+                        tr.classList.add('detail-row'); 
+                    }
+                    
+                    const tdLabel = document.createElement('td');
+                    tdLabel.textContent = rowDef.label;
+                    tdLabel.className = 'px-6 py-3 whitespace-nowrap text-sm font-medium text-gray-800 w-48 sticky left-0 bg-white z-0';
+                    if (rowDef.isSubtotal) tdLabel.classList.add('bg-gray-100');
+                    
+                    // --- AÑADIR BOTÓN DE IA ---
+                    if (rowDef.hasDetail) {
+                        tdLabel.classList.add('flex', 'items-center', 'justify-between'); 
+                        const labelText = document.createElement('span');
+                        labelText.textContent = rowDef.label;
+                        const aiButton = document.createElement('button');
+                        aiButton.className = 'ai-trigger-btn';
+                        aiButton.innerHTML = '✨';
+                        aiButton.title = `Asistente IA para ${rowDef.label}`;
+                        aiButton.dataset.rubro = rowDef.key;
+                        aiButton.dataset.label = rowDef.label;
+                        aiButton.addEventListener('click', (e) => {
+                            e.stopPropagation(); 
+                            openAiChatModal(rowDef.key, rowDef.label);
+                        });
+                        tdLabel.innerHTML = ''; 
+                        tdLabel.appendChild(labelText);
+                        tdLabel.appendChild(aiButton);
+                    }
+                    
+                    tr.appendChild(tdLabel);
+
+                    for (let i = 0; i < state.config.months; i++) {
+                        // Usamos la propiedad original del P&L
+                        const value = state.projection[i][rowDef.key];
+                        const cell = createCell(value, rowDef.editable, rowDef.key, i);
+                        
+                        if (rowDef.hasDetail && !rowDef.editable) {
+                             // Para los rubros con detalle, la celda es no editable pero clicable para el modal
+                            cell.classList.add('has-detail', 'calculated-cell'); 
+                            cell.dataset.label = rowDef.label;
+                            cell.title = "Doble-clic para gestionar líneas de detalle";
+                            cell.addEventListener('dblclick', () => openDetailModal(rowDef.key, i, rowDef.label));
+                        } else if (rowDef.editable) {
+                            // Celdas editables normales
+                            cell.classList.remove('calculated-cell');
+                        } else {
+                            // Celdas calculadas normales
+                            cell.classList.add('calculated-cell');
+                        }
+                        
+                        tr.appendChild(cell);
+                    }
+                    tbody.appendChild(tr);
+
+                    // --- (LÓGICA PARA RENDERIZAR LÍNEAS MANUALES y RESTANTE) ---
+                    if (rowDef.hasDetail) {
+                        const rubroKey = rowDef.key;
+                        
+                        // 1. Renderizar filas para líneas manuales existentes
+                        const manualLines = state.manualLines[rubroKey] || {};
+                        Object.keys(manualLines).forEach(lineId => {
+                            const lineDef = manualLines[lineId];
+                            const lineRow = document.createElement('tr');
+                            lineRow.className = 'manual-line-row';
+                            lineRow.dataset.lineId = lineId;
+
+                            const tdLineLabel = document.createElement('td');
+                            tdLineLabel.textContent = `... ${lineDef.name}`;
+                            tdLineLabel.className = 'px-6 py-2 whitespace-nowrap text-sm font-medium text-gray-700 w-48 sticky left-0 bg-white z-0';
+                            lineRow.appendChild(tdLineLabel);
+
+                            if (!state.manualLineValues[lineId]) {
+                                state.manualLineValues[lineId] = new Array(state.config.months).fill(0);
+                            }
+
+                            for (let i = 0; i < state.config.months; i++) {
+                                const lineValue = state.manualLineValues[lineId][i] || 0;
+                                const cell = createCell(lineValue, true, `manual-${lineId}`, i);
+                                cell.classList.remove('calculated-cell'); // Es editable
+                                lineRow.appendChild(cell);
+                            }
+                            tbody.appendChild(lineRow);
+                        });
+
+                        // 2. Renderizar fila de "Restante"
+                        const remainingRow = document.createElement('tr');
+                        remainingRow.className = 'remaining-line-row';
+                        remainingRow.id = `row-remaining-${rubroKey}`;
+
+                        const tdRemainingLabel = document.createElement('td');
+                        tdRemainingLabel.textContent = `... Restante (por asignar)`;
+                        tdRemainingLabel.className = 'px-6 py-2 whitespace-nowrap text-sm font-medium text-gray-700 w-48 sticky left-0 bg-white z-0';
+                        remainingRow.appendChild(tdRemainingLabel);
+
+                        for (let i = 0; i < state.config.months; i++) {
+                            const remainingValue = calculateRemaining(rubroKey, i);
+                            const cell = createCell(remainingValue, false, `remaining-${rubroKey}`, i);
+                            remainingRow.appendChild(cell);
+                        }
+                        tbody.appendChild(remainingRow);
+                    }
+                });
+
+                table.appendChild(tbody);
+                tableContainer.appendChild(table);
+            };
+
+            const updateTableCellsForMonth = (mesIndex) => {
+                const rubros = ['sales', 'cogs', 'grossMargin', 'admin', 'commercial', 'ebitda', 'amort', 'ebit', 'interest', 'ebt', 'tax', 'netIncome'];
+                
+                rubros.forEach(rubroKey => {
+                    const cell = document.querySelector(`[data-rubro="${rubroKey}"][data-mes="${mesIndex}"], #row-${rubroKey} > td:nth-child(${mesIndex + 2})`);
+                    if (cell) {
+                        cell.textContent = fNum(state.projection[mesIndex][rubroKey]);
+                    }
+                });
+            };
+
+            const updateRemainingRow = (rubroKey, mesIndex) => {
+                const cell = document.querySelector(`[data-rubro="remaining-${rubroKey}"][data-mes="${mesIndex}"]`);
+                if (cell) {
+                    const remainingValue = calculateRemaining(rubroKey, mesIndex);
+                    cell.textContent = fNum(remainingValue);
+                }
+            };
+            
+            const updateAllRemainingRows = () => {
+                const rubrosConDetalle = ['cogs', 'admin', 'commercial'];
+                rubrosConDetalle.forEach(rubroKey => {
+                    for (let i = 0; i < state.config.months; i++) {
+                        updateRemainingRow(rubroKey, i);
+                    }
+                });
+            };
+
+            // --- RENDERIZADO CASH FLOW ---
+
+            const renderCashFlowTable = () => {
+                tableContainer.innerHTML = '';
+                if (state.cashFlow.length === 0) {
+                    tableContainer.innerHTML = '<p class="text-gray-500">Genera la proyección P&L primero.</p>';
+                    return;
+                }
+
+                const table = document.createElement('table');
+                table.className = 'min-w-full divide-y divide-gray-200 border border-gray-300 cashflow-table';
+                
+                const thead = document.createElement('thead');
+                const headerRow = document.createElement('tr');
+                headerRow.className = 'header-row';
+                
+                const thRubro = document.createElement('th');
+                thRubro.textContent = 'Concepto';
+                thRubro.className = 'px-6 py-3 text-left text-xs font-medium uppercase tracking-wider w-48 sticky left-0 z-10';
+                headerRow.appendChild(thRubro);
+
+                for (let i = 0; i < state.config.months; i++) {
+                    const thMes = document.createElement('th');
+                    thMes.textContent = `Mes ${i + 1}`;
+                    thMes.className = 'px-6 py-3 text-right text-xs font-medium uppercase tracking-wider';
+                    headerRow.appendChild(thMes);
+                }
+                thead.appendChild(headerRow);
+                table.appendChild(thead);
+
+                const tbody = document.createElement('tbody');
+                tbody.className = 'bg-white divide-y divide-gray-200';
+
+                const rowsDefinition = [
+                    { key: 'cashInitial', label: 'Caja Inicial', isTotal: true },
+                    { label: '--- ENTRADAS OPERATIVAS ---', isHeader: true },
+                    { key: 'salesCollection', label: ' Cobranzas por Ventas' },
+                    { key: 'totalInflow', label: 'Total Entradas', isTotal: true },
+                    { label: '--- SALIDAS OPERATIVAS ---', isHeader: true },
+                    { key: 'cogsPayment', label: ' Pago a Proveedores (COGS)' },
+                    { key: 'opexPayment', label: ' Pago Gastos Operativos' },
+                    { key: 'taxPayment', label: ' Pago de Impuestos' },
+                    { key: 'interestPayment', label: ' Pago de Intereses' },
+                    { key: 'totalOutflow', label: 'Total Salidas', isTotal: true, isNegative: true },
+                    { key: 'netOperatingFlow', label: 'Flujo Neto Operativo', isTotal: true, isFinal: true },
+                    { key: 'cashFinal', label: 'Caja Final', isTotal: true, isFinal: true },
+                ];
+
+                rowsDefinition.forEach(rowDef => {
+                    const tr = document.createElement('tr');
+                    
+                    if (rowDef.isHeader) {
+                        tr.innerHTML = `<td colspan="${state.config.months + 1}" class="px-6 py-2 text-xs font-semibold uppercase bg-gray-200 text-gray-700">${rowDef.label}</td>`;
+                        tbody.appendChild(tr);
+                        return;
+                    }
+
+                    if (rowDef.isTotal) tr.classList.add('bg-blue-50', 'is-cash-flow-total', 'font-semibold');
+                    if (rowDef.isFinal) tr.classList.add('border-t-2', 'border-blue-400');
+                    
+                    const tdLabel = document.createElement('td');
+                    tdLabel.textContent = rowDef.label;
+                    tdLabel.className = 'px-6 py-3 whitespace-nowrap text-sm font-medium text-gray-800 w-48 sticky left-0 bg-white z-0';
+                    if (rowDef.isTotal) tdLabel.classList.remove('bg-white');
+                    tr.appendChild(tdLabel);
+
+                    for (let i = 0; i < state.config.months; i++) {
+                        const value = state.cashFlow[i] ? state.cashFlow[i][rowDef.key] : 0;
+                        const cell = createCell(value, false, rowDef.key, i);
+                        cell.classList.add('calculated-cell');
+                        if (rowDef.isTotal) cell.classList.add('is-cash-flow-total');
+                        if (rowDef.isNegative) cell.classList.add('text-red-700');
+                        tr.appendChild(cell);
+                    }
+                    tbody.appendChild(tr);
+                });
+
+                table.appendChild(tbody);
+                tableContainer.appendChild(table);
+            };
+
+            // --- LÓGICA DE TABS ---
+
+            const switchTab = (tabName) => {
+                isCashFlowActive = (tabName === 'cashflow');
+                
+                // 1. Actualizar botones
+                tabPnl.classList.remove('active');
+                tabCashFlow.classList.remove('active');
+                if (tabName === 'pnl') {
+                    tabPnl.classList.add('active');
+                    activeTabTitle.textContent = 'Estado de Resultados (P&L)';
+                    configPnl.style.display = 'grid';
+                    configCashFlow.style.display = 'none';
+                } else {
+                    tabCashFlow.classList.add('active');
+                    activeTabTitle.textContent = 'Flujo de Caja (Cash Flow)';
+                    configPnl.style.display = 'none';
+                    configCashFlow.style.display = 'grid';
+                }
+                
+                // 2. Renderizar tabla activa
+                if (state.projection.length > 0) {
+                    if (isCashFlowActive) {
+                        renderCashFlowTable();
+                    } else {
+                        renderTable();
+                    }
+                } else {
+                    tableContainer.innerHTML = '<p class="text-gray-500">Presiona "Generar Proyección" para empezar.</p>';
+                }
+            };
+            
+            // --- LÓGICA DE KPIS Y EXPORTACIÓN ---
+
+            const renderKPIs = () => {
+                const kpiGrid = document.getElementById('kpi-grid');
+                kpiGrid.innerHTML = '';
+                
+                if (state.projection.length === 0) return;
+
+                const totalSales = state.projection.reduce((sum, m) => sum + m.sales, 0);
+                const totalNetIncome = state.projection.reduce((sum, m) => sum + m.netIncome, 0);
+                const totalGrossMargin = state.projection.reduce((sum, m) => sum + m.grossMargin, 0);
+                const totalEBITDA = state.projection.reduce((sum, m) => sum + m.ebitda, 0);
+
+                const avgGrossMarginPerc = totalSales > 0 ? (totalGrossMargin / totalSales) * 100 : 0;
+                const avgNetIncomePerc = totalSales > 0 ? (totalNetIncome / totalSales) * 100 : 0;
+                
+                const finalCash = state.cashFlow.length > 0 ? state.cashFlow[state.cashFlow.length - 1].cashFinal : 0;
+
+                const kpis = [
+                    { label: 'Ventas Totales', value: fNum(totalSales), color: 'bg-blue-100 text-blue-800' },
+                    { label: 'Resultado Neto Total', value: fNum(totalNetIncome), color: totalNetIncome >= 0 ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800' },
+                    { label: 'Margen Bruto (%)', value: `${avgGrossMarginPerc.toFixed(1)}%`, color: 'bg-yellow-100 text-yellow-800' },
+                    { label: 'Margen Neto (%)', value: `${avgNetIncomePerc.toFixed(1)}%`, color: totalNetIncome >= 0 ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800' },
+                    { label: 'EBITDA Total', value: fNum(totalEBITDA), color: 'bg-indigo-100 text-indigo-800' },
+                    { label: 'Caja Final', value: fNum(finalCash), color: finalCash >= 0 ? 'bg-teal-100 text-teal-800' : 'bg-red-100 text-red-800' },
+                ];
+
+                kpis.forEach(kpi => {
+                    const div = document.createElement('div');
+                    div.className = `${kpi.color} p-4 rounded-lg shadow-sm`;
+                    div.innerHTML = `
+                        <span class="block text-sm font-medium">${kpi.label}</span>
+                        <span class="block text-xl font-bold">${kpi.value}</span>
+                    `;
+                    kpiGrid.appendChild(div);
+                });
+            };
+
+            const handleExportExcel = () => {
+                const isPnl = !isCashFlowActive;
+                const tableId = isPnl ? 'pnl' : 'cashflow';
+                const data = isPnl ? state.projection : state.cashFlow;
+
+                if (data.length === 0) return;
+
+                let csvContent = "data:text/csv;charset=utf-8,";
+                
+                const header = isPnl ? [
+                    'Rubro', ...Array.from({ length: state.config.months }, (_, i) => `Mes ${i + 1}`)
+                ] : [
+                    'Concepto', ...Array.from({ length: state.config.months }, (_, i) => `Mes ${i + 1}`)
+                ];
+                csvContent += header.join(';') + '\n';
+
+                const rowsDefinition = isPnl ? [
+                    'sales', 'cogs', 'grossMargin', 'admin', 'commercial', 'ebitda', 'amort', 'ebit', 'interest', 'ebt', 'tax', 'netIncome'
+                ] : [
+                    'cashInitial', 'salesCollection', 'totalInflow', 'cogsPayment', 'opexPayment', 'taxPayment', 'interestPayment', 'totalOutflow', 'netOperatingFlow', 'cashFinal'
+                ];
+
+                rowsDefinition.forEach(key => {
+                    const label = document.getElementById(`row-${key}`)?.querySelector('td')?.textContent || key;
+                    if (label.startsWith('---')) return; // Saltar headers
+                    
+                    let row = [label];
+                    for (let i = 0; i < state.config.months; i++) {
+                        const value = data[i][key] || 0;
+                        row.push(String(value).replace('.', ',')); // Usar coma para decimales en CSV
+                    }
+                    csvContent += row.join(';') + '\n';
+                });
+
+                const encodedUri = encodeURI(csvContent);
+                const link = document.createElement("a");
+                link.setAttribute("href", encodedUri);
+                link.setAttribute("download", `presupuesto_${tableId}.csv`);
+                document.body.appendChild(link);
+                link.click();
+                document.body.removeChild(link);
+            };
+            
+            const handlePrint = () => {
+                // Insertar logo en el header de impresión si existe
+                if (state.logoDataUrl) {
+                    const printHeader = document.createElement('div');
+                    printHeader.className = 'print-header';
+                    printHeader.innerHTML = `
+                        <img src="${state.logoDataUrl}" class="print-logo" alt="Logo">
+                        <div>
+                            <h2 class="text-2xl font-bold">${state.currentProjectName || 'Presupuesto'}</h2>
+                            <p class="text-sm">${new Date().toLocaleDateString('es-AR')}</p>
+                        </div>
+                    `;
+                    const projectionPanel = document.getElementById('projection-panel');
+                    projectionPanel.insertBefore(printHeader, projectionPanel.firstChild);
+                }
+                
+                window.print();
+                
+                // Remover header después de imprimir
+                setTimeout(() => {
+                    const printHeaders = document.querySelectorAll('.print-header');
+                    printHeaders.forEach(h => h.remove());
+                }, 100);
+            };
+
+            // --- LÓGICA DE ANÁLISIS DE PROYECCIÓN (IA) ---
+
+            const openSummaryModal = () => openModal(summaryModal);
+            const closeSummaryModal = () => closeModal(summaryModal);
+
+            const callGeminiForSummary = async (query) => {
+                const apiKey = document.getElementById('geminiApiKey').value.trim();
+                if (!apiKey) {
+                    throw new Error('Por favor ingrese su API Key de Gemini en la configuración.');
+                }
+                
+                const apiUrlBase = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-pro:generateContent?key=${apiKey}`;
+
+                const systemPrompt = `Eres un Analista Financiero Senior. Revisa los datos de la proyección del usuario y provee un resumen ejecutivo conciso en ESPAÑOL (máximo 150 palabras) con la siguiente estructura y tono profesional:
+                
+                1.  **Título**: Análisis Ejecutivo de Proyección
+                2.  **Punto Destacado**: Identifica el aspecto más positivo (ej. crecimiento de ventas, buen margen).
+                3.  **Riesgo Potencial**: Señala un área que necesita vigilancia (ej. baja de margen neto, alta dependencia de un rubro).
+                4.  **Sugerencia Estratégica**: Ofrece una recomendación accionable.
+                
+                DATOS DEL PROYECTO:`;
+
+                const payload = {
+                    contents: [{ parts: [{ text: `${systemPrompt}\n\n${query}` }] }],
+                };
+
+                let response;
+                let delay = 1000;
+                for (let i = 0; i < 3; i++) {
+                    try {
+                        response = await fetch(apiUrlBase, {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify(payload)
+                        });
+                        if (response.ok) break;
+                        if (response.status === 401 || response.status === 429 || response.status >= 500) {
+                            if (response.status === 401) {
+                                console.error("Error 401: Fallo de Autenticación de Gemini. Asegúrese de que la clave se inyecte correctamente.");
+                            }
+                            await new Promise(res => setTimeout(res, delay));
+                            delay *= 2;
+                        } else {
+                            throw new Error(`Error HTTP: ${response.status}`);
+                        }
+                    } catch (error) {
+                        if (i === 2) throw error;
+                        await new Promise(res => setTimeout(res, delay));
+                        delay *= 2;
+                    }
+                }
+
+                if (!response.ok) {
+                    throw new Error(`Error final de API: ${response.status}`);
+                }
+
+                const result = await response.json();
+                return result.candidates?.[0]?.content?.parts?.[0]?.text || "No se pudo generar el resumen. Intente de nuevo.";
+            };
+
+            const handleAnalyzeProjection = async () => {
+                if (state.projection.length === 0) return;
+                
+                const apiKey = document.getElementById('geminiApiKey').value.trim();
+                if (!apiKey) {
+                    alert('⚠️ Por favor, ingresa tu API Key de Gemini en la configuración para usar funciones de IA.');
+                    return;
+                }
+                
+                openSummaryModal();
+                summarySpinner.style.display = 'block';
+                summaryResults.style.display = 'none';
+                summaryResults.innerHTML = '';
+
+                // Crear resumen de datos a enviar
+                const totalSales = state.projection.reduce((sum, m) => sum + m.sales, 0);
+                const totalNetIncome = state.projection.reduce((sum, m) => sum + m.netIncome, 0);
+                const avgGrossMarginPerc = totalSales > 0 ? (state.projection.reduce((sum, m) => sum + m.grossMargin, 0) / totalSales) * 100 : 0;
+                const totalEBITDA = state.projection.reduce((sum, m) => sum + m.ebitda, 0);
+
+                const queryData = `
+                    Ventas Totales: ${fNum(totalSales)}
+                    Resultado Neto Total: ${fNum(totalNetIncome)}
+                    Margen Bruto Promedio: ${avgGrossMarginPerc.toFixed(2)}%
+                    EBITDA Total: ${fNum(totalEBITDA)}
+                    Número de Meses Proyectados: ${state.config.months}
+                `;
+
+                try {
+                    const analysisText = await callGeminiForSummary(queryData);
+                    summaryResults.innerHTML = analysisText.replace(/\n/g, '<br>');
+                    summaryResults.style.display = 'block';
+                } catch (error) {
+                    summaryResults.innerHTML = `<p class="text-red-500">Error al obtener el análisis de la IA: ${error.message}</p>`;
+                    summaryResults.style.display = 'block';
+                } finally {
+                    summarySpinner.style.display = 'none';
+                }
+            };
+            
+            // --- LÓGICA DE PLANIFICADOR DE ESCENARIOS (IA) ---
+            
+            const openScenarioModal = () => openModal(scenarioModal);
+            const closeScenarioModal = () => closeModal(scenarioModal);
+            
+            const callGeminiForScenario = async (hypothesis, baseConfig) => {
+                const apiKey = document.getElementById('geminiApiKey').value.trim();
+                if (!apiKey) {
+                    throw new Error('Por favor ingrese su API Key de Gemini en la configuración.');
+                }
+                
+                const apiUrlBase = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-pro:generateContent?key=${apiKey}`;
+                
+                const prompt = `Eres un motor de simulación financiera. Tu única tarea es convertir la hipótesis del usuario en un objeto JSON con los cambios a aplicar a la configuración base.
+                
+                La configuración base es:
+                Ventas Iniciales: ${baseConfig.initialSales}
+                Crecimiento de Ventas: ${baseConfig.salesGrowth * 100}%
+                %COGS: ${baseConfig.percCOGS * 100}%
+                %G. Admin: ${baseConfig.percAdmin * 100}%
+                %G. Comercial: ${baseConfig.percCommercial * 100}%
+
+                Las claves del JSON de salida DEBEN ser:
+                - 'initialSales' (número absoluto)
+                - 'salesGrowth' (porcentaje en decimal, ej: 0.05)
+                - 'percCOGS' (porcentaje en decimal, ej: 0.40)
+                - 'percAdmin' (porcentaje en decimal, ej: 0.15)
+                - 'percCommercial' (porcentaje en decimal, ej: 0.10)
+                
+                Devuelve *solamente* un objeto JSON con las claves que CAMBIAN respecto a la base. NO incluyas claves que permanezcan iguales.
+                
+                HIPÓTESIS: "${hypothesis}"`;
+
+                const payload = {
+                    contents: [{ parts: [{ text: prompt }] }],
+                    generationConfig: {
+                        responseMimeType: "application/json",
+                        responseSchema: {
+                            type: "OBJECT",
+                            properties: {
+                                "initialSales": { "type": "NUMBER", "nullable": true },
+                                "salesGrowth": { "type": "NUMBER", "nullable": true },
+                                "percCOGS": { "type": "NUMBER", "nullable": true },
+                                "percAdmin": { "type": "NUMBER", "nullable": true },
+                                "percCommercial": { "type": "NUMBER", "nullable": true },
+                            }
+                        }
+                    }
+                };
+
+                let response;
+                let delay = 1000;
+                for (let i = 0; i < 3; i++) {
+                    try {
+                        response = await fetch(apiUrlBase, {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify(payload)
+                        });
+                        if (response.ok) break;
+                        if (response.status === 401 || response.status === 429 || response.status >= 500) {
+                            if (response.status === 401) {
+                                console.error("Error 401: Fallo de Autenticación de Gemini. Asegúrese de que la clave se inyecte correctamente.");
+                            }
+                            await new Promise(res => setTimeout(res, delay));
+                            delay *= 2;
+                        } else {
+                            throw new Error(`Error HTTP: ${response.status}`);
+                        }
+                    } catch (error) {
+                        if (i === 2) throw error;
+                        await new Promise(res => setTimeout(res, delay));
+                        delay *= 2;
+                    }
+                }
+
+                if (!response.ok) {
+                    throw new Error(`Error final de API: ${response.status}`);
+                }
+
+                const result = await response.json();
+                const textResult = result.candidates?.[0]?.content?.parts?.[0]?.text;
+                
+                if (!textResult) throw new Error("No se recibió respuesta válida del motor de simulación.");
+
+                try {
+                    return JSON.parse(textResult);
+                } catch (e) {
+                    console.error("Error al parsear JSON de escenario:", e);
+                    throw new Error("La IA devolvió un formato inválido. Por favor, intente con otra frase.");
+                }
+            };
+
+            const handleAnalyzeScenario = async () => {
+                const hypothesis = scenarioInput.value.trim();
+                if (!hypothesis || state.projection.length === 0) return;
+
+                const apiKey = document.getElementById('geminiApiKey').value.trim();
+                if (!apiKey) {
+                    alert('⚠️ Por favor, ingresa tu API Key de Gemini en la configuración para usar funciones de IA.');
+                    return;
+                }
+
+                scenarioBtnText.textContent = 'Calculando Escenario...';
+                scenarioSpinner.style.display = 'inline-block';
+                scenarioResults.style.display = 'none';
+
+                const baseConfig = state.config;
+                const baseNetIncome = state.projection.reduce((sum, m) => sum + m.netIncome, 0);
+
+                scenarioBaseResult.textContent = `$${fNum(baseNetIncome)}`;
+                scenarioNewResult.textContent = '$Cargando...';
+                scenarioChangesApplied.textContent = 'Analizando hipótesis...';
+
+                try {
+                    // 1. Obtener cambios de la IA
+                    const changes = await callGeminiForScenario(hypothesis, baseConfig);
+                    
+                    // 2. Aplicar cambios a una config temporal
+                    const tempConfig = { ...baseConfig };
+                    let changesText = 'Variables modificadas: ';
+                    let firstChange = true;
+
+                    for (const key in changes) {
+                        if (changes[key] !== null && changes[key] !== undefined) {
+                            tempConfig[key] = changes[key];
+                            
+                            if (!firstChange) changesText += ', ';
+                            
+                            if (key.includes('perc')) {
+                                changesText += `${key.replace('perc', '%')} a ${(changes[key] * 100).toFixed(2)}%`;
+                            } else if (key.includes('Growth')) {
+                                changesText += `${key} a ${(changes[key] * 100).toFixed(2)}%`;
+                            } else {
+                                changesText += `${key} a $${fNum(changes[key])}`;
+                            }
+                            firstChange = false;
+                        }
+                    }
+                    if (firstChange) changesText = 'No se detectaron cambios en la hipótesis.';
+
+                    // 3. Recalcular la proyección con la config temporal
+                    let tempProjection = [];
+                    let previousMonth = null;
+                    for (let i = 0; i < tempConfig.months; i++) {
+                        let tempMonthData = {};
+                        
+                        // Recalcular ventas para el escenario
+                        if (i === 0) {
+                            tempMonthData.sales = tempConfig.initialSales;
+                        } else {
+                            tempMonthData.sales = previousMonth.sales * (1 + tempConfig.salesGrowth);
+                        }
+                        const sales = tempMonthData.sales;
+                        
+                        // Aplicar porcentajes temporales
+                        tempMonthData.cogs = sales * tempConfig.percCOGS;
+                        tempMonthData.admin = sales * tempConfig.percAdmin;
+                        tempMonthData.commercial = sales * tempConfig.percCommercial;
+                        tempMonthData.amort = sales * tempConfig.percAmort;
+                        tempMonthData.interest = sales * tempConfig.percInterest;
+
+                        // Recalcular subtotales
+                        tempMonthData.grossMargin = tempMonthData.sales - tempMonthData.cogs;
+                        tempMonthData.ebitda = tempMonthData.grossMargin - tempMonthData.admin - tempMonthData.commercial;
+                        tempMonthData.ebit = tempMonthData.ebitda - tempMonthData.amort;
+                        tempMonthData.ebt = tempMonthData.ebit - tempMonthData.interest;
+                        tempMonthData.tax = tempMonthData.ebt > 0 ? tempMonthData.ebt * tempConfig.percTax : 0;
+                        tempMonthData.netIncome = tempMonthData.ebt - tempMonthData.tax;
+
+                        tempProjection[i] = tempMonthData;
+                        previousMonth = tempMonthData;
+                    }
+
+                    const scenarioNetIncome = tempProjection.reduce((sum, m) => sum + m.netIncome, 0);
+
+                    // 4. Mostrar Resultados
+                    scenarioNewResult.textContent = `$${fNum(scenarioNetIncome)}`;
+                    scenarioChangesApplied.textContent = changesText;
+                    scenarioResults.style.display = 'block';
+
+                } catch (error) {
+                    scenarioNewResult.textContent = '$ERROR';
+                    scenarioChangesApplied.textContent = `Error: ${error.message}`;
+                    scenarioResults.style.display = 'block';
+                } finally {
+                    scenarioBtnText.textContent = 'Analizar Escenario';
+                    scenarioSpinner.style.display = 'none';
+                }
+            };
+            
+            // --- LÓGICA DE GENERACIÓN DE EMAIL (IA) ---
+
+            const openEmailModal = () => openModal(emailModal);
+            // ------- GESTIÓN DE LOGO -------
+            
+            const handleLogoUpload = (e) => {
+                const file = e.target.files[0];
+                if (!file) return;
+                
+                const reader = new FileReader();
+                reader.onload = (event) => {
+                    state.logoDataUrl = event.target.result;
+                    logoPreview.src = state.logoDataUrl;
+                    logoPreview.style.display = 'block';
+                };
+                reader.readAsDataURL(file);
+            };
+
+            // ------- GUARDAR/CARGAR PRESUPUESTO -------
+            
+            const openSaveModal = () => {
+                if (!state.currentProjectName) {
+                    const date = new Date();
+                    projectName.value = `Presupuesto ${date.getDate()}/${date.getMonth() + 1}/${date.getFullYear()}`;
+                } else {
+                    projectName.value = state.currentProjectName;
+                }
+                saveSuccess.style.display = 'none';
+                openModal(saveModal);
+            };
+            
+            const closeSaveModal = () => closeModal(saveModal);
+            
+            const handleSaveProject = async () => {
+                const name = projectName.value.trim();
+                if (!name) {
+                    alert('Por favor ingresa un nombre para el presupuesto.');
+                    return;
+                }
+                
+                const projectData = {
+                    name: name,
+                    timestamp: Date.now(),
+                    state: {
+                        config: state.config,
+                        projection: state.projection,
+                        isEdited: state.isEdited,
+                        manualLines: state.manualLines,
+                        manualLineValues: state.manualLineValues,
+                        cashFlowDistribution: state.cashFlowDistribution,
+                        cashFlow: state.cashFlow,
+                        logoDataUrl: state.logoDataUrl
+                    }
+                };
+                
+                try {
+                    await saveProjectToDB(projectData);
+                    state.currentProjectName = name;
+                    saveSuccess.textContent = `✅ Guardado en: ${projectData.name}`;
+                    saveSuccess.style.display = 'block';
+                    setTimeout(() => closeSaveModal(), 2000);
+                } catch (error) {
+                    alert('Error al guardar: ' + error.message);
+                }
+            };
+            
+            const openLoadModal = async () => {
+                openModal(loadModal);
+                await renderSavedProjects();
+            };
+            
+            const closeLoadModal = () => closeModal(loadModal);
+            
+            const renderSavedProjects = async () => {
+                try {
+                    const projects = await loadProjectsFromDB();
+                    savedProjectsList.innerHTML = '';
+                    
+                    if (projects.length === 0) {
+                        savedProjectsList.innerHTML = `
+                            <p class="text-gray-500 text-sm mb-3">No hay presupuestos guardados en esta carpeta.</p>
+                            <button id="changeLocationBtn" class="w-full bg-blue-500 hover:bg-blue-600 text-white font-bold py-2 px-4 rounded-md">
+                                📁 Cambiar Ubicación de Guardado
+                            </button>
+                        `;
+                        document.getElementById('changeLocationBtn')?.addEventListener('click', changeSaveLocation);
+                        return;
+                    }
+                    
+                    // Botón para cambiar ubicación
+                    const changeLocBtn = document.createElement('button');
+                    changeLocBtn.id = 'changeLocationBtn';
+                    changeLocBtn.className = 'w-full bg-gray-500 hover:bg-gray-600 text-white text-sm font-bold py-2 px-3 rounded-md mb-3';
+                    changeLocBtn.textContent = '📁 Cambiar Carpeta';
+                    changeLocBtn.addEventListener('click', changeSaveLocation);
+                    savedProjectsList.appendChild(changeLocBtn);
+                    
+                    projects.sort((a, b) => b.timestamp - a.timestamp);
+                    
+                    projects.forEach(project => {
+                        const item = document.createElement('div');
+                        item.className = 'flex justify-between items-center p-3 border rounded-md bg-white shadow-sm hover:bg-gray-50';
+                        const date = new Date(project.timestamp);
+                        item.innerHTML = `
+                            <div>
+                                <span class="font-semibold text-gray-800">${project.name}</span>
+                                <span class="text-xs text-gray-500 block">${date.toLocaleString('es-AR')}</span>
+                                <span class="text-xs text-gray-400 block">📄 ${project.fileName}</span>
+                            </div>
+                            <div class="flex space-x-2">
+                                <button data-filename="${project.fileName}" class="load-project-btn bg-blue-500 hover:bg-blue-600 text-white text-xs font-bold py-2 px-3 rounded-md">
+                                    Cargar
+                                </button>
+                                <button data-filename="${project.fileName}" class="delete-project-btn bg-red-500 hover:bg-red-600 text-white text-xs font-bold py-2 px-3 rounded-md">
+                                    Eliminar
+                                </button>
+                            </div>
+                        `;
+                        savedProjectsList.appendChild(item);
+                    });
+                    
+                    document.querySelectorAll('.load-project-btn').forEach(btn => {
+                        btn.addEventListener('click', () => handleLoadProject(btn.dataset.filename, projects));
+                    });
+                    
+                    document.querySelectorAll('.delete-project-btn').forEach(btn => {
+                        btn.addEventListener('click', () => handleDeleteProject(btn.dataset.filename));
+                    });
+                    
+                } catch (error) {
+                    savedProjectsList.innerHTML = `
+                        <p class="text-red-500 mb-3">Error al cargar proyectos: ${error.message}</p>
+                        <button id="changeLocationBtn" class="w-full bg-blue-500 hover:bg-blue-600 text-white font-bold py-2 px-4 rounded-md">
+                            📁 Seleccionar Carpeta de Presupuestos
+                        </button>
+                    `;
+                    document.getElementById('changeLocationBtn')?.addEventListener('click', changeSaveLocation);
+                }
+            };
+            
+            const handleLoadProject = (fileName, projects) => {
+                const project = projects.find(p => p.fileName === fileName);
+                if (!project) return;
+                
+                // Restaurar el estado
+                state.config = project.state.config;
+                state.projection = project.state.projection;
+                state.isEdited = project.state.isEdited;
+                state.manualLines = project.state.manualLines;
+                state.manualLineValues = project.state.manualLineValues;
+                state.cashFlowDistribution = project.state.cashFlowDistribution;
+                state.cashFlow = project.state.cashFlow;
+                state.logoDataUrl = project.state.logoDataUrl;
+                state.currentProjectName = project.name;
+                
+                // Actualizar inputs de configuración
+                configInputs.initialSales.value = state.config.initialSales;
+                configInputs.salesGrowth.value = state.config.salesGrowth * 100;
+                configInputs.months.value = state.config.months;
+                configInputs.percCOGS.value = state.config.percCOGS * 100;
+                configInputs.percAdmin.value = state.config.percAdmin * 100;
+                configInputs.percCommercial.value = state.config.percCommercial * 100;
+                configInputs.percAmort.value = state.config.percAmort * 100;
+                configInputs.percInterest.value = state.config.percInterest * 100;
+                configInputs.percTax.value = state.config.percTax * 100;
+                cashFlowInputs.initialCash.value = state.config.initialCash;
+                cashFlowInputs.paymentTerms.value = state.config.paymentTerms;
+                cashFlowInputs.collectionTerms.value = state.config.collectionTerms;
+                
+                // Restaurar logo si existe
+                if (state.logoDataUrl) {
+                    logoPreview.src = state.logoDataUrl;
+                    logoPreview.style.display = 'block';
+                }
+                
+                // Renderizar
+                if (isCashFlowActive) {
+                    renderCashFlowTable();
+                } else {
+                    renderTable();
+                }
+                renderKPIs();
+                
+                closeLoadModal();
+            };
+            
+            const handleDeleteProject = async (fileName) => {
+                if (!confirm('¿Estás seguro de eliminar este presupuesto del disco?')) return;
+                
+                try {
+                    await deleteProjectFromDB(fileName);
+                    await renderSavedProjects();
+                } catch (error) {
+                    alert('Error al eliminar: ' + error.message);
+                }
+            };
+
+            // ------- IMPORTACIÓN DE BALANCE COMPLETO (PDF) -------
+            
+            let currentBalancePdf = null;
+            
+            const openBalanceImportModal = () => {
+                currentBalancePdf = null;
+                pdfPreview.classList.add('hidden');
+                analyzeBalanceButton.disabled = true;
+                balanceAnalysisResults.innerHTML = '';
+                openModal(balanceImportModal);
+            };
+            
+            const closeBalanceImportModalFn = () => closeModal(balanceImportModal);
+            
+            const handlePdfUpload = (e) => {
+                const file = e.target.files[0];
+                if (!file) return;
+                
+                if (file.size > 10 * 1024 * 1024) {
+                    alert('El archivo es muy grande. El tamaño máximo es 10MB.');
+                    return;
+                }
+                
+                currentBalancePdf = file;
+                pdfFileName.textContent = file.name;
+                pdfFileSize.textContent = `${(file.size / 1024).toFixed(2)} KB`;
+                pdfPreview.classList.remove('hidden');
+                analyzeBalanceButton.disabled = false;
+            };
+            
+            const handleRemovePdf = () => {
+                currentBalancePdf = null;
+                balancePdfUpload.value = '';
+                pdfPreview.classList.add('hidden');
+                analyzeBalanceButton.disabled = true;
+                balanceAnalysisResults.innerHTML = '';
+            };
+            
+            const pdfToBase64 = (file) => {
+                return new Promise((resolve, reject) => {
+                    const reader = new FileReader();
+                    reader.onload = () => {
+                        const base64 = reader.result.split(',')[1];
+                        resolve(base64);
+                    };
+                    reader.onerror = reject;
+                    reader.readAsDataURL(file);
+                });
+            };
+            
+            const callGeminiForBalanceAnalysis = async (pdfBase64) => {
+                const apiKey = document.getElementById('geminiApiKey').value.trim();
+                if (!apiKey) {
+                    throw new Error('Por favor ingrese su API Key de Gemini en la configuración.');
+                }
+                
+                const apiUrlBase = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-pro:generateContent?key=${apiKey}`;
+
+                const systemPrompt = `Eres un contador experto analizando balances contables argentinos. Tu tarea es extraer información clave de un balance completo en PDF.
+                
+                Instrucciones:
+                1. Busca en el ESTADO DE RESULTADOS el valor de "Ventas" o "Ingresos por Ventas" del último período.
+                2. Busca en el ANEXO II (o similar) las líneas de gastos, clasificándolas en 'admin', 'commercial' y 'cogs'.
+                3. Excluye totales, subtotales o partidas que no sean gastos operativos (ej. 'Resultado por Tenencia', 'RECPAM', 'Intereses').
+                4. Devuelve *únicamente* un objeto JSON con esta estructura:
+                   {
+                     "ventas": 1234567.89,
+                     "gastos": {
+                       "admin": ["Sueldos Admin", "Gastos Bancarios", ...],
+                       "commercial": ["Comisiones", "Publicidad", ...],
+                       "cogs": ["Sueldos Operativos", "Materia Prima", ...]
+                     }
+                   }
+                5. No incluyas markdown ni otros textos fuera del JSON.`;
+
+                const payload = {
+                    contents: [{
+                        parts: [
+                            { text: systemPrompt },
+                            {
+                                inline_data: {
+                                    mime_type: "application/pdf",
+                                    data: pdfBase64
+                                }
+                            }
+                        ]
+                    }],
+                    generationConfig: {
+                        responseMimeType: "application/json"
+                    }
+                };
+
+                let response;
+                let delay = 1000;
+                for (let i = 0; i < 3; i++) {
+                    try {
+                        response = await fetch(apiUrlBase, {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify(payload)
+                        });
+                        if (response.ok) break;
+                        if (response.status === 401 || response.status === 429 || response.status >= 500) {
+                            await new Promise(res => setTimeout(res, delay));
+                            delay *= 2;
+                        } else {
+                            throw new Error(`Error HTTP: ${response.status}`);
+                        }
+                    } catch (error) {
+                        if (i === 2) throw error;
+                        await new Promise(res => setTimeout(res, delay));
+                        delay *= 2;
+                    }
+                }
+
+                if (!response.ok) {
+                    const errorText = await response.text();
+                    throw new Error(`Error final de API: ${response.status} - ${errorText}`);
+                }
+
+                const result = await response.json();
+                const textResult = result.candidates?.[0]?.content?.parts?.[0]?.text;
+                
+                if (!textResult) return { ventas: 0, gastos: { admin: [], commercial: [], cogs: [] } };
+
+                try {
+                    return JSON.parse(textResult);
+                } catch (e) {
+                    console.error("Error al parsear JSON del balance:", e, textResult);
+                    return { ventas: 0, gastos: { admin: [], commercial: [], cogs: [] } };
+                }
+            };
+            
+            const handleAnalyzeBalance = async () => {
+                if (!currentBalancePdf) return;
+
+                const apiKey = document.getElementById('geminiApiKey').value.trim();
+                if (!apiKey) {
+                    balanceAnalysisResults.innerHTML = '<p class="text-center text-red-500 font-semibold">⚠️ Por favor, ingresa tu API Key de Gemini en la configuración.</p>';
+                    return;
+                }
+
+                balanceAnalyzeBtnText.textContent = 'Analizando PDF...';
+                balanceImportSpinner.style.display = 'inline-block';
+                balanceAnalysisResults.innerHTML = '';
+                analyzeBalanceButton.disabled = true;
+
+                try {
+                    // Convertir PDF a base64
+                    const pdfBase64 = await pdfToBase64(currentBalancePdf);
+                    
+                    // Analizar con Gemini
+                    const balanceData = await callGeminiForBalanceAnalysis(pdfBase64);
+                    
+                    // Mostrar resultados
+                    balanceAnalysisResults.innerHTML = `
+                        <div class="bg-green-50 border border-green-200 rounded-lg p-4">
+                            <h4 class="font-semibold text-green-800 mb-2">✅ Balance Analizado</h4>
+                            <p class="text-sm text-gray-700"><strong>Ventas detectadas:</strong> $${fNum(balanceData.ventas)}</p>
+                            <p class="text-sm text-gray-700 mt-2"><strong>Líneas de gastos encontradas:</strong></p>
+                            <ul class="text-xs text-gray-600 ml-4 mt-1">
+                                <li>Administrativos: ${balanceData.gastos.admin.length}</li>
+                                <li>Comerciales: ${balanceData.gastos.commercial.length}</li>
+                                <li>COGS: ${balanceData.gastos.cogs.length}</li>
+                            </ul>
+                        </div>
+                        <button id="applyBalanceDataButton" class="w-full bg-green-600 hover:bg-green-700 text-white font-bold py-2 px-4 rounded-md shadow-md transition duration-200 mt-3">
+                            Aplicar Datos al Presupuesto
+                        </button>
+                    `;
+                    
+                    document.getElementById('applyBalanceDataButton').addEventListener('click', () => {
+                        applyBalanceData(balanceData);
+                    });
+
+                } catch (error) {
+                    console.error("Error en análisis de balance:", error);
+                    balanceAnalysisResults.innerHTML = `<p class="text-center text-red-500 font-semibold">Error al conectar con la IA: ${error.message}</p>`;
+                } finally {
+                    balanceAnalyzeBtnText.textContent = 'Analizar Balance con IA';
+                    balanceImportSpinner.style.display = 'none';
+                    analyzeBalanceButton.disabled = false;
+                }
+            };
+            
+            const applyBalanceData = (balanceData) => {
+                // Aplicar ventas
+                if (balanceData.ventas > 0) {
+                    configInputs.initialSales.value = balanceData.ventas;
+                }
+                
+                // Aplicar líneas de gastos
+                const rubroMapping = {
+                    admin: 'admin',
+                    commercial: 'commercial',
+                    cogs: 'cogs'
+                };
+                
+                Object.keys(rubroMapping).forEach(aiKey => {
+                    const lines = balanceData.gastos[aiKey] || [];
+                    lines.forEach(lineName => {
+                        addManualLine(rubroMapping[aiKey], lineName, 0);
+                    });
+                });
+                
+                // Regenerar proyección
+                regenerarProyeccionCompleta();
+                
+                // Cerrar modal
+                closeBalanceImportModalFn();
+                
+                alert(`✅ Balance importado!\n\nVentas: $${fNum(balanceData.ventas)}\nLíneas de gastos: ${balanceData.gastos.admin.length + balanceData.gastos.commercial.length + balanceData.gastos.cogs.length}\n\nAhora puedes editar los valores mensuales de cada línea.`);
+            };
+
+            // ------- INICIALIZACIÓN Y LISTENERS -------
+
+            const initializeApp = async () => {
+                // Inicializar base de datos
+                await initDB();
+                
+                // Validación visual del campo API Key
+                // Validación visual del campo API Key
+                geminiApiKeyInput.addEventListener('input', () => {
+                    const apiKey = geminiApiKeyInput.value.trim();
+                    geminiApiKeyInput.classList.remove('api-key-valid', 'api-key-empty');
+                    if (apiKey.length > 0) {
+                        geminiApiKeyInput.classList.add('api-key-valid');
+                    } else {
+                        geminiApiKeyInput.classList.add('api-key-empty');
+                    }
+                });
+                
+                // Generar proyección inicial (P&L + Cash Flow)
+                regenerarProyeccionCompleta();
+
+                // Listeners de Tabs
+                tabPnl.addEventListener('click', () => switchTab('pnl'));
+                tabCashFlow.addEventListener('click', () => switchTab('cashflow'));
+
+                // Listener principal de Recalculo
+                generateButton.addEventListener('click', regenerarProyeccionCompleta);
+
+                // Listeners de Logo
+                logoUpload.addEventListener('change', handleLogoUpload);
+
+                // Listeners de Guardar/Cargar
+                saveProjectButton.addEventListener('click', openSaveModal);
+                closeSaveModalButton.addEventListener('click', closeSaveModal);
+                confirmSaveButton.addEventListener('click', handleSaveProject);
+                loadProjectButton.addEventListener('click', openLoadModal);
+                closeLoadModalButton.addEventListener('click', closeLoadModal);
+
+                // Listeners de Botones de IA
+                openBalanceImportButton.addEventListener('click', openBalanceImportModal);
+                closeBalanceImportButton.addEventListener('click', closeBalanceImportModalFn);
+                balancePdfUpload.addEventListener('change', handlePdfUpload);
+                removePdfButton.addEventListener('click', handleRemovePdf);
+                analyzeBalanceButton.addEventListener('click', handleAnalyzeBalance);
+                analyzePastedTextButton.addEventListener('click', handleAnalyzeText);
+                closeImportModalButton.addEventListener('click', () => closeModal(importModal));
+                analyzeProjectionButton.addEventListener('click', handleAnalyzeProjection);
+                closeSummaryModalButton.addEventListener('click', () => closeModal(summaryModal));
+                openScenarioModalButton.addEventListener('click', openScenarioModal);
+                closeScenarioModalButton.addEventListener('click', () => closeModal(scenarioModal));
+                analyzeScenarioButton.addEventListener('click', handleAnalyzeScenario);
+                printButton.addEventListener('click', handlePrint);
+                exportExcelButton.addEventListener('click', handleExportExcel);
+                
+                // Listeners de Modals de Detalle
+                closeModalButton.addEventListener('click', () => closeModal(detailModal));
+                addManualLineForm.addEventListener('submit', handleAddManualLine);
+
+                // Listeners de Chat IA
+                closeAiChatModalButton.addEventListener('click', closeAiChatModal);
+                aiChatForm.addEventListener('submit', handleChatSubmit);
+
+
+                // Listener para inputs que fuerzan recalculo completo (P&L)
+                Object.values(configInputs).forEach(input => {
+                    input.addEventListener('change', () => {
+                        if (state.projection.length > 0) regenerarProyeccionCompleta();
+                    });
+                });
+                
+                // Listener para inputs de Cash Flow (fuerza recalculo de CF y renderizado)
+                Object.values(cashFlowInputs).forEach(input => {
+                    input.addEventListener('change', () => {
+                        if (state.projection.length > 0) {
+                            // Solo necesitamos recalcular el CF, no todo el P&L
+                            calculateCashFlow().then(() => {
+                                if (isCashFlowActive) renderCashFlowTable();
+                                renderKPIs();
+                            });
+                        }
+                    });
+                });
+
+
+                // Listeners de Edición (P&L)
+                // Evento para la edición de celdas
+                const handleCellEdit = (e) => {
+                    const cell = e.target;
+                    const rubroKey = cell.dataset.rubro;
+                    const mesIndex = parseInt(cell.dataset.mes);
+                    const newValue = pNum(cell.textContent);
+
+                    if (rubroKey.startsWith('manual-')) {
+                        const lineId = rubroKey.split('-')[1];
+                        
+                        if (!state.manualLineValues[lineId]) {
+                            state.manualLineValues[lineId] = new Array(state.config.months).fill(0);
+                        }
+                        
+                        state.manualLineValues[lineId][mesIndex] = newValue;
+                        cell.textContent = fNum(newValue);
+
+                        const parentRubroKey = Object.keys(state.manualLines).find(key => state.manualLines[key][lineId]);
+                        if (parentRubroKey) {
+                            // 1. Recalcula el P&L a partir de este mes (para que los subtotales se actualicen)
+                            recalculateFrom(mesIndex);
+                            // 2. Actualizar sumario del modal si está abierto
+                            if (detailModal.style.display === 'flex' && state.currentModal.rubroKey === parentRubroKey) {
+                                renderModalContent();
+                            }
+                        }
+
+                    } else if (rubroKey === 'initialSales' || rubroKey === 'salesGrowth') {
+                        // Si se edita Ventas o Crecimiento, se recalcula todo el P&L
+                        regenerarProyeccionCompleta();
+
+                    } else {
+                        // Es una celda de rubro principal (ej: "sales", "amort")
+                        state.isEdited[mesIndex][rubroKey] = true;
+                        state.projection[mesIndex][rubroKey] = newValue;
+                        cell.textContent = fNum(newValue);
+                        recalculateFrom(mesIndex);
+                    }
+                };
+
+                // Asignar el listener a la tabla container para delegar la edición
+                tableContainer.addEventListener('blur', (e) => {
+                    if (e.target.contentEditable === 'true') {
+                        handleCellEdit(e);
+                    }
+                }, true); // Usar captura para asegurar que el evento blur se propague
+
+                // Asignar listener para prevenir enter en celdas editables
+                tableContainer.addEventListener('keydown', (e) => {
+                    if (e.target.contentEditable === 'true' && e.key === 'Enter') {
+                        e.preventDefault();
+                        e.target.blur();
+                    }
+                }, true);
+
+            };
+
+            initializeApp(); // Ejecutar la inicialización
+        });
+    </script>
+</body>
+</html>
